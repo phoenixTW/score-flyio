@@ -17,9 +17,9 @@ jobs:
       - name: test
         run: go run gotest.tools/gotestsum@latest --format github-actions
       - name: lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
+        run: >-
+          go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+          run --timeout 5m
       - name: tidy
         run: go mod tidy
       - name: diff
