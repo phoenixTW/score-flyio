@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"slices"
+	"sort"
 
 	scoreloader "github.com/score-spec/score-go/loader"
 	scoreschema "github.com/score-spec/score-go/schema"
@@ -45,6 +46,12 @@ type machineInput struct {
 }
 
 var newMachinesClient = flymachines.NewFlyClient
+
+var execFly = func(args []string, stdout, stderr io.Writer) error {
+	flyCommand := exec.Command("fly", args...)
+	flyCommand.Stdout, flyCommand.Stderr = stdout, stderr
+	return flyCommand.Run()
+}
 
 type machineHookSet struct {
 	apply     func(context.Context, *machineconfig.Plan, []planner.MachineChange, map[string]string) error
@@ -107,7 +114,7 @@ func loadMachineInput(cmd *cobra.Command, workloadFile string, options machineCo
 		}
 	}
 	current := &sd.State
-	if current, err = current.WithWorkload(&workload, &workloadFile, state.WorkloadExtras{}); err != nil {
+	if current, err = current.WithWorkload(&workload, &workloadFile, sd.State.Workloads[workloadName].Extras); err != nil {
 		return nil, fmt.Errorf("failed to add score file to project: %w", err)
 	}
 	if current, err = current.WithPrimedResources(); err != nil {
@@ -129,10 +136,86 @@ func loadMachineInput(cmd *cobra.Command, workloadFile string, options machineCo
 	if plan == nil {
 		return nil, fmt.Errorf("workload %q has no metadata.progresify machine plan", workloadName)
 	}
+	for i := range plan.Groups {
+		if override, ok := sd.State.Workloads[workloadName].Extras.ScaleOverrides[plan.Groups[i].Name]; ok {
+			plan.Groups[i].MinMachines = override.Min
+			plan.Groups[i].MaxMachines = override.Max
+		}
+	}
+	if err := plan.Validate(); err != nil {
+		return nil, err
+	}
 	if err := plan.ValidateImmutableImages(); err != nil {
 		return nil, err
 	}
 	return &machineInput{state: current, plan: plan, secrets: secrets}, nil
+}
+
+func releaseCommandHash(plan *machineconfig.Plan) string {
+	if len(plan.ReleaseCommand) == 0 {
+		return ""
+	}
+	image := ""
+	if len(plan.Groups) > 0 && len(plan.Groups[0].Containers) > 0 {
+		image = plan.Groups[0].Containers[0].Image + "@" + plan.Groups[0].Containers[0].ImageDigest
+	}
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%q\x00%s", plan.ReleaseCommand, image)))
+	return hex.EncodeToString(sum[:])
+}
+
+func releaseOptions(input *machineInput) (bool, string) {
+	hash := releaseCommandHash(input.plan)
+	if hash == "" {
+		return false, ""
+	}
+	skip := input.state.Workloads[input.plan.Workload].Extras.ReleaseCommandHash == hash
+	return skip, hash
+}
+
+func persistReleaseHash(input *machineInput, hash string) error {
+	if hash == "" {
+		return nil
+	}
+	sd, ok, err := state.LoadStateDirectory(".")
+	if err != nil {
+		return fmt.Errorf("failed to load existing state directory: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("state directory does not exist, please run \"init\" first")
+	}
+	sd.State = *input.state
+	workloadState := sd.State.Workloads[input.plan.Workload]
+	workloadState.Extras.ReleaseCommandHash = hash
+	sd.State.Workloads[input.plan.Workload] = workloadState
+	if err := sd.Persist(); err != nil {
+		return fmt.Errorf("failed to persist state file: %w", err)
+	}
+	return nil
+}
+
+func applyMachinePlanLive(cmd *cobra.Command, input *machineInput) error {
+	client, err := newMachinesClient()
+	if err != nil {
+		return err
+	}
+	d := deployer.New(client, input.plan.AppName)
+	if _, err := d.EnsureApp(cmd.Context(), flymachines.CreateAppRequest{AppName: &input.plan.AppName}); err != nil {
+		return err
+	}
+	if err := setMachineSecrets(cmd, client.ApiToken, input.plan.AppName, input.secrets); err != nil {
+		return err
+	}
+	skip, releaseHash := releaseOptions(input)
+	result, err := reconcile.Apply(cmd.Context(), d, input.plan, reconcile.Options{SkipRelease: skip})
+	if err != nil {
+		return err
+	}
+	if !skip {
+		if err := persistReleaseHash(input, releaseHash); err != nil {
+			return err
+		}
+	}
+	return writeMachineJSON(cmd, outputFor(input, result.Changes))
 }
 
 type machinePlanOutput struct {
@@ -311,22 +394,7 @@ func runMachineApply(cmd *cobra.Command, args []string) error {
 		}
 		return writeMachineJSON(cmd, outputFor(input, changes))
 	}
-	client, err := newMachinesClient()
-	if err != nil {
-		return err
-	}
-	d := deployer.New(client, input.plan.AppName)
-	if _, err := d.EnsureApp(cmd.Context(), flymachines.CreateAppRequest{AppName: &input.plan.AppName}); err != nil {
-		return err
-	}
-	if err := setMachineSecrets(cmd, client.ApiToken, input.plan.AppName, input.secrets); err != nil {
-		return err
-	}
-	result, err := reconcile.Apply(cmd.Context(), d, input.plan, reconcile.Options{})
-	if err != nil {
-		return err
-	}
-	return writeMachineJSON(cmd, outputFor(input, result.Changes))
+	return applyMachinePlanLive(cmd, input)
 }
 
 func runMachineValidate(cmd *cobra.Command, args []string) error {
@@ -352,16 +420,25 @@ func runMachineStatus(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("fly client is not configured for machine status")
 	}
-	machines, err := deployer.New(client, input.plan.AppName).ListMachines(cmd.Context())
+	d := deployer.New(client, input.plan.AppName)
+	machines, err := d.ListMachines(cmd.Context())
 	if err != nil {
 		return err
 	}
+	type machineEventOutput struct {
+		ID        string `json:"id,omitempty"`
+		Type      string `json:"type,omitempty"`
+		Timestamp *int   `json:"timestamp,omitempty"`
+	}
 	type machineStatus struct {
-		ID     string `json:"id"`
-		Name   string `json:"name,omitempty"`
-		Group  string `json:"group,omitempty"`
-		State  string `json:"state,omitempty"`
-		Region string `json:"region,omitempty"`
+		ID           string               `json:"id"`
+		Name         string               `json:"name,omitempty"`
+		Group        string               `json:"group,omitempty"`
+		State        string               `json:"state,omitempty"`
+		Region       string               `json:"region,omitempty"`
+		LastEvents   []machineEventOutput `json:"last_events,omitempty"`
+		FailedChecks int                  `json:"failed_checks,omitempty"`
+		Exits        int                  `json:"exits,omitempty"`
 	}
 	result := make([]machineStatus, 0, len(machines))
 	for _, machine := range machines {
@@ -369,7 +446,38 @@ func runMachineStatus(cmd *cobra.Command, args []string) error {
 		if machine.Config != nil && machine.Config.Metadata != nil {
 			group = (*machine.Config.Metadata)[planner.MetadataGroup]
 		}
-		result = append(result, machineStatus{ID: value(machine.Id), Name: value(machine.Name), Group: group, State: value(machine.State), Region: value(machine.Region)})
+		status := machineStatus{ID: value(machine.Id), Name: value(machine.Name), Group: group, State: value(machine.State), Region: value(machine.Region)}
+		if group != "" {
+			events, eventsErr := d.ListEvents(cmd.Context(), value(machine.Id))
+			if eventsErr != nil {
+				return eventsErr
+			}
+			sort.SliceStable(events, func(i, j int) bool {
+				if events[i].Timestamp == nil {
+					return false
+				}
+				if events[j].Timestamp == nil {
+					return true
+				}
+				return *events[i].Timestamp > *events[j].Timestamp
+			})
+			for i := 0; i < len(events) && i < 3; i++ {
+				status.LastEvents = append(status.LastEvents, machineEventOutput{ID: value(events[i].Id), Type: value(events[i].Type), Timestamp: events[i].Timestamp})
+			}
+			for _, event := range events {
+				if value(event.Type) == "exit" {
+					status.Exits++
+				}
+			}
+		}
+		if machine.Checks != nil {
+			for _, check := range *machine.Checks {
+				if check.Status != nil && *check.Status != "" && *check.Status != "passing" {
+					status.FailedChecks++
+				}
+			}
+		}
+		result = append(result, status)
 	}
 	return writeMachineJSON(cmd, result)
 }
@@ -426,9 +534,7 @@ func setMachineSecrets(cmd *cobra.Command, token, app string, secrets map[string
 	for key, secret := range secrets {
 		args = append(args, fmt.Sprintf("%s=%s", key, secret))
 	}
-	secretCommand := exec.Command("fly", args...)
-	secretCommand.Stderr, secretCommand.Stdout = cmd.ErrOrStderr(), cmd.ErrOrStderr()
-	if err := secretCommand.Run(); err != nil {
+	if err := execFly(args, cmd.ErrOrStderr(), cmd.ErrOrStderr()); err != nil {
 		return fmt.Errorf("failed to set machine secrets: %w", err)
 	}
 	return nil
@@ -452,22 +558,142 @@ func runMachineReconcile(cmd *cobra.Command, args []string) error {
 		}
 		return writeMachineJSON(cmd, outputFor(input, changes))
 	}
+	return applyMachinePlanLive(cmd, input)
+}
+
+func managedMachineTargets(machines []flymachines.Machine, group string, machineID string) ([]flymachines.Machine, error) {
+	var targets []flymachines.Machine
+	for _, machine := range machines {
+		if machine.Config == nil || machine.Config.Metadata == nil || (*machine.Config.Metadata)[planner.MetadataGroup] == "" {
+			continue
+		}
+		if group != "" && (*machine.Config.Metadata)[planner.MetadataGroup] != group {
+			continue
+		}
+		if machineID != "" && value(machine.Id) != machineID {
+			continue
+		}
+		targets = append(targets, machine)
+	}
+	if len(targets) == 0 {
+		return nil, fmt.Errorf("no managed machines matched the given filters")
+	}
+	return targets, nil
+}
+
+func runMachineLogs(cmd *cobra.Command, args []string) error {
+	if machineOptions(cmd).dryRun {
+		return fmt.Errorf("--dry-run is only supported by plan and validate")
+	}
+	machineFlag, _ := cmd.Flags().GetString("machine")
+	groupFlag, _ := cmd.Flags().GetString("group")
+	input, err := loadMachineInput(cmd, args[0], machineOptions(cmd), false)
+	if err != nil {
+		return err
+	}
 	client, err := newMachinesClient()
 	if err != nil {
 		return err
 	}
 	d := deployer.New(client, input.plan.AppName)
-	if _, err := d.EnsureApp(cmd.Context(), flymachines.CreateAppRequest{AppName: &input.plan.AppName}); err != nil {
-		return err
-	}
-	if err := setMachineSecrets(cmd, client.ApiToken, input.plan.AppName, input.secrets); err != nil {
-		return err
-	}
-	result, err := reconcile.Apply(cmd.Context(), d, input.plan, reconcile.Options{})
+	machines, err := d.ListMachines(cmd.Context())
 	if err != nil {
 		return err
 	}
-	return writeMachineJSON(cmd, outputFor(input, result.Changes))
+	targets, err := managedMachineTargets(machines, groupFlag, machineFlag)
+	if err != nil {
+		return err
+	}
+	for _, machine := range targets {
+		flyArgs := []string{"logs", "--access-token", client.ApiToken, "--app", input.plan.AppName, "--machine", value(machine.Id)}
+		if err := execFly(flyArgs, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
+			return fmt.Errorf("failed to stream logs for machine %s: %w", value(machine.Id), err)
+		}
+	}
+	return nil
+}
+
+func runMachineScale(cmd *cobra.Command, args []string) error {
+	if machineOptions(cmd).dryRun {
+		return fmt.Errorf("--dry-run is only supported by plan and validate")
+	}
+	group, _ := cmd.Flags().GetString("group")
+	minimum, _ := cmd.Flags().GetInt("min")
+	maximum, _ := cmd.Flags().GetInt("max")
+	if minimum < 0 {
+		return fmt.Errorf("scale min must not be negative")
+	}
+	if maximum < minimum {
+		return fmt.Errorf("scale max %d must be at least min %d", maximum, minimum)
+	}
+	input, err := loadMachineInput(cmd, args[0], machineOptions(cmd), false)
+	if err != nil {
+		return err
+	}
+	if !slices.ContainsFunc(input.plan.Groups, func(candidate machineconfig.Group) bool { return candidate.Name == group }) {
+		return fmt.Errorf("unknown machine group %q", group)
+	}
+	sd, ok, err := state.LoadStateDirectory(".")
+	if err != nil {
+		return fmt.Errorf("failed to load existing state directory: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("state directory does not exist, please run \"init\" first")
+	}
+	sd.State = *input.state
+	workloadState := sd.State.Workloads[input.plan.Workload]
+	if workloadState.Extras.ScaleOverrides == nil {
+		workloadState.Extras.ScaleOverrides = map[string]state.ScaleRange{}
+	}
+	workloadState.Extras.ScaleOverrides[group] = state.ScaleRange{Min: minimum, Max: maximum}
+	sd.State.Workloads[input.plan.Workload] = workloadState
+	if err := sd.Persist(); err != nil {
+		return fmt.Errorf("failed to persist state file: %w", err)
+	}
+	if apply, _ := cmd.Flags().GetBool("apply"); apply {
+		return runMachineReconcile(cmd, args)
+	}
+	return writeMachineJSON(cmd, map[string]any{"group": group, "min": minimum, "max": maximum, "message": "scale override saved; run apply to change live machines"})
+}
+
+func runMachineLifecycle(cmd *cobra.Command, args []string, label string, action func(*deployer.Deployer, context.Context, string) error) error {
+	if machineOptions(cmd).dryRun {
+		return fmt.Errorf("--dry-run is only supported by plan and validate")
+	}
+	groupFlag, _ := cmd.Flags().GetString("group")
+	input, err := loadMachineInput(cmd, args[0], machineOptions(cmd), false)
+	if err != nil {
+		return err
+	}
+	client, err := newMachinesClient()
+	if err != nil {
+		return err
+	}
+	d := deployer.New(client, input.plan.AppName)
+	machines, err := d.ListMachines(cmd.Context())
+	if err != nil {
+		return err
+	}
+	targets, err := managedMachineTargets(machines, groupFlag, "")
+	if err != nil {
+		return err
+	}
+	ids := make([]string, 0, len(targets))
+	for _, machine := range targets {
+		if err := action(d, cmd.Context(), value(machine.Id)); err != nil {
+			return err
+		}
+		ids = append(ids, value(machine.Id))
+	}
+	return writeMachineJSON(cmd, map[string]any{label: ids})
+}
+
+func runMachineSuspend(cmd *cobra.Command, args []string) error {
+	return runMachineLifecycle(cmd, args, "suspended", (*deployer.Deployer).SuspendMachine)
+}
+
+func runMachineResume(cmd *cobra.Command, args []string) error {
+	return runMachineLifecycle(cmd, args, "resumed", (*deployer.Deployer).ResumeMachine)
 }
 
 func value(v *string) string {
@@ -490,5 +716,20 @@ func init() {
 	status := newMachineCommand("status SCORE_FILE", runMachineStatus, false)
 	reconcileCmd := newMachineCommand("reconcile SCORE_FILE", runMachineReconcile, false)
 	destroy := newMachineCommand("destroy SCORE_FILE", runMachineDestroy, true)
-	rootCmd.AddCommand(validate, plan, apply, status, reconcileCmd, destroy)
+	logs := newMachineCommand("logs SCORE_FILE", runMachineLogs, false)
+	logs.Flags().String("machine", "", "target a single machine by id")
+	logs.Flags().String("group", "", "target machines in one machine group")
+	scale := newMachineCommand("scale SCORE_FILE", runMachineScale, false)
+	scale.Flags().String("group", "", "machine group to scale")
+	scale.Flags().Int("min", 0, "minimum machine count")
+	scale.Flags().Int("max", 0, "maximum machine count")
+	scale.Flags().Bool("apply", false, "immediately reconcile live machines")
+	_ = scale.MarkFlagRequired("group")
+	_ = scale.MarkFlagRequired("min")
+	_ = scale.MarkFlagRequired("max")
+	suspend := newMachineCommand("suspend SCORE_FILE", runMachineSuspend, false)
+	suspend.Flags().String("group", "", "target machines in one machine group")
+	resume := newMachineCommand("resume SCORE_FILE", runMachineResume, false)
+	resume.Flags().String("group", "", "target machines in one machine group")
+	rootCmd.AddCommand(validate, plan, apply, status, reconcileCmd, destroy, logs, scale, suspend, resume)
 }

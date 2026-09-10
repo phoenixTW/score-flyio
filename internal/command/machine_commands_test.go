@@ -4,12 +4,15 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/astromechza/score-flyio/internal/flymachines"
 	"github.com/astromechza/score-flyio/internal/machineconfig"
 	"github.com/astromechza/score-flyio/internal/planner"
 	"github.com/astromechza/score-flyio/internal/state"
@@ -118,11 +121,215 @@ func TestMachineLifecycleHooksAndMissingClientError(t *testing.T) {
 }
 
 func TestLegacyAndMachineCommandsAreRegistered(t *testing.T) {
-	for _, name := range []string{"init", "generate", "provisioners", "validate", "plan", "apply", "status", "reconcile", "destroy"} {
+	for _, name := range []string{"init", "generate", "provisioners", "validate", "plan", "apply", "status", "reconcile", "destroy", "logs", "scale", "suspend", "resume"} {
 		cmd, _, err := rootCmd.Find([]string{name})
 
 		assert.NoError(t, err)
 		assert.Equal(t, name, cmd.Name())
+	}
+}
+
+func useFakeMachinesClient(t *testing.T, server *httptest.Server) {
+	t.Helper()
+	client, err := flymachines.NewClientWithResponses(server.URL)
+	if !assert.NoError(t, err) {
+		t.FailNow()
+	}
+	flyClient := &flymachines.FlyClient{ClientWithResponsesInterface: client, ApiToken: "fake-token"}
+	previousClient := newMachinesClient
+	newMachinesClient = func() (*flymachines.FlyClient, error) { return flyClient, nil }
+	t.Cleanup(func() { newMachinesClient = previousClient })
+}
+
+func TestMachineScalePersistsOverrideAndAffectsPlan(t *testing.T) {
+	workloadFile := writeMachineCommandFixture(t, strings.Repeat("d", 64))
+
+	stdout, _, err := executeAndResetCommand(context.Background(), rootCmd, []string{"scale", workloadFile, "--group", "api", "--min", "2", "--max", "3"})
+
+	assert.NoError(t, err)
+	assert.Contains(t, stdout, `"group": "api"`)
+	assert.Contains(t, stdout, `"min": 2`)
+	assert.Contains(t, stdout, `"max": 3`)
+	assert.Contains(t, stdout, "run apply to change live machines")
+
+	planOutput, _, err := executeAndResetCommand(context.Background(), rootCmd, []string{"plan", workloadFile})
+
+	assert.NoError(t, err)
+	assert.Contains(t, planOutput, `"min": 2`)
+	assert.Contains(t, planOutput, `"max": 3`)
+
+	_, _, err = executeAndResetCommand(context.Background(), rootCmd, []string{"scale", workloadFile, "--group", "nope", "--min", "1", "--max", "1"})
+
+	assert.EqualError(t, err, `unknown machine group "nope"`)
+
+	_, _, err = executeAndResetCommand(context.Background(), rootCmd, []string{"scale", workloadFile, "--group", "api", "--min", "3", "--max", "1"})
+
+	assert.EqualError(t, err, "scale max 1 must be at least min 3")
+}
+
+func TestMachineScaleOverrideSurvivesSubsequentLoads(t *testing.T) {
+	workloadFile := writeMachineCommandFixture(t, strings.Repeat("e", 64))
+
+	_, _, err := executeAndResetCommand(context.Background(), rootCmd, []string{"scale", workloadFile, "--group", "api", "--min", "0", "--max", "1"})
+
+	assert.NoError(t, err)
+
+	previousHooks := machineHooks
+	var received *machineconfig.Plan
+	machineHooks.apply = func(_ context.Context, plan *machineconfig.Plan, _ []planner.MachineChange, _ map[string]string) error {
+		received = plan
+		return nil
+	}
+	t.Cleanup(func() { machineHooks = previousHooks })
+
+	stdout, _, err := executeAndResetCommand(context.Background(), rootCmd, []string{"apply", workloadFile})
+
+	assert.NoError(t, err)
+	assert.Contains(t, stdout, `"min": 0`)
+	assert.Contains(t, stdout, `"max": 1`)
+	if assert.NotNil(t, received) {
+		assert.Equal(t, 0, received.Groups[0].MinMachines)
+		assert.Equal(t, 1, received.Groups[0].MaxMachines)
+	}
+}
+
+func TestMachineSuspendAndResumeTargetManagedMachines(t *testing.T) {
+	workloadFile := writeMachineCommandFixture(t, strings.Repeat("f", 64))
+	var called []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/apps/score-gateway/machines":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[
+				{"id":"m1","name":"n1","state":"started","region":"ams","config":{"metadata":{"progresify.group":"api"}}},
+				{"id":"m2","name":"n2","state":"started","region":"ams","config":{"metadata":{"progresify.group":"api"}}},
+				{"id":"m3","name":"n3","state":"started","region":"ams","config":{"metadata":{}}}
+			]`))
+		case r.Method == http.MethodPost && (strings.HasSuffix(r.URL.Path, "/suspend") || strings.HasSuffix(r.URL.Path, "/start")):
+			called = append(called, r.Method+" "+r.URL.Path)
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	useFakeMachinesClient(t, server)
+
+	stdout, _, err := executeAndResetCommand(context.Background(), rootCmd, []string{"suspend", workloadFile, "--group", "api"})
+
+	assert.NoError(t, err)
+	assert.Contains(t, stdout, `"suspended": [`)
+	assert.Contains(t, stdout, `"m1"`)
+	assert.Contains(t, stdout, `"m2"`)
+	assert.NotContains(t, stdout, `"m3"`)
+	assert.Equal(t, []string{"POST /apps/score-gateway/machines/m1/suspend", "POST /apps/score-gateway/machines/m2/suspend"}, called)
+
+	called = nil
+	stdout, _, err = executeAndResetCommand(context.Background(), rootCmd, []string{"resume", workloadFile})
+
+	assert.NoError(t, err)
+	assert.Contains(t, stdout, `"resumed": [`)
+	assert.Equal(t, []string{"POST /apps/score-gateway/machines/m1/start", "POST /apps/score-gateway/machines/m2/start"}, called)
+
+	_, _, err = executeAndResetCommand(context.Background(), rootCmd, []string{"suspend", workloadFile, "--group", "worker"})
+
+	assert.EqualError(t, err, "no managed machines matched the given filters")
+}
+
+func TestMachineStatusSurfacesEventsExitsAndFailedChecks(t *testing.T) {
+	workloadFile := writeMachineCommandFixture(t, strings.Repeat("1", 64))
+	var eventsRequests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/apps/score-gateway/machines":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[
+				{"id":"m1","name":"n1","state":"started","region":"ams","checks":[{"name":"api-ready","status":"passing"},{"name":"api-live","status":"failing"}],"config":{"metadata":{"progresify.group":"api"}}},
+				{"id":"m2","name":"n2","state":"started","region":"ams","config":{"metadata":{}}}
+			]`))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/events"):
+			eventsRequests++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[
+				{"id":"e4","type":"exit","timestamp":5},
+				{"id":"e1","type":"exit","timestamp":30},
+				{"id":"e2","type":"start","timestamp":20},
+				{"id":"e3","type":"stop","timestamp":10}
+			]`))
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	useFakeMachinesClient(t, server)
+
+	stdout, _, err := executeAndResetCommand(context.Background(), rootCmd, []string{"status", workloadFile})
+
+	assert.NoError(t, err)
+	assert.Equal(t, 1, eventsRequests)
+	assert.Contains(t, stdout, `"failed_checks": 1`)
+	assert.Contains(t, stdout, `"exits": 2`)
+	assert.Contains(t, stdout, `"last_events"`)
+	assert.Contains(t, stdout, `"id": "e1"`)
+	assert.Contains(t, stdout, `"id": "e2"`)
+	assert.Contains(t, stdout, `"id": "e3"`)
+	assert.NotContains(t, stdout, `"id": "e4"`)
+}
+
+func TestMachineLogsExecsFlyPerTargetMachine(t *testing.T) {
+	workloadFile := writeMachineCommandFixture(t, strings.Repeat("2", 64))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/apps/score-gateway/machines" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[
+				{"id":"m1","state":"started","config":{"metadata":{"progresify.group":"api"}}},
+				{"id":"m2","state":"started","config":{"metadata":{"progresify.group":"api"}}},
+				{"id":"m3","state":"started","config":{"metadata":{}}}
+			]`))
+			return
+		}
+		t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	useFakeMachinesClient(t, server)
+	var calls [][]string
+	previousExec := execFly
+	execFly = func(args []string, stdout, stderr io.Writer) error {
+		assert.NotNil(t, stdout)
+		assert.NotNil(t, stderr)
+		calls = append(calls, args)
+		return nil
+	}
+	t.Cleanup(func() { execFly = previousExec })
+
+	_, _, err := executeAndResetCommand(context.Background(), rootCmd, []string{"logs", workloadFile})
+
+	assert.NoError(t, err)
+	if assert.Len(t, calls, 2) {
+		assert.Equal(t, []string{"logs", "--access-token", "fake-token", "--app", "score-gateway", "--machine", "m1"}, calls[0])
+		assert.Equal(t, []string{"logs", "--access-token", "fake-token", "--app", "score-gateway", "--machine", "m2"}, calls[1])
+	}
+
+	calls = nil
+	_, _, err = executeAndResetCommand(context.Background(), rootCmd, []string{"logs", workloadFile, "--machine", "m3"})
+
+	assert.EqualError(t, err, "no managed machines matched the given filters")
+	assert.Empty(t, calls)
+}
+
+func TestMachineNewCommandsRejectDryRun(t *testing.T) {
+	workloadFile := writeMachineCommandFixture(t, strings.Repeat("3", 64))
+
+	commands := [][]string{
+		{"logs", workloadFile, "--dry-run"},
+		{"scale", workloadFile, "--group", "api", "--min", "1", "--max", "1", "--dry-run"},
+		{"suspend", workloadFile, "--dry-run"},
+		{"resume", workloadFile, "--dry-run"},
+	}
+	for _, args := range commands {
+		_, _, err := executeAndResetCommand(context.Background(), rootCmd, args)
+
+		assert.EqualError(t, err, "--dry-run is only supported by plan and validate")
 	}
 }
 
