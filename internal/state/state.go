@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"github.com/score-spec/score-go/framework"
 	"gopkg.in/yaml.v3"
@@ -29,11 +30,13 @@ const (
 	DefaultRelativeStateDirectory = ".score-flyio"
 	FileName                      = "state.yaml"
 	SharedStateAppPrefixKey       = "score-flyio-app-prefix"
+	StateSchemaVersion            = 1
 )
 
 type StateExtras struct {
-	AppPrefix    string        `yaml:"app_prefix"`
-	Provisioners []Provisioner `yaml:"provisioners"`
+	SchemaVersion int           `yaml:"schema_version,omitempty"`
+	AppPrefix     string        `yaml:"app_prefix"`
+	Provisioners  []Provisioner `yaml:"provisioners"`
 }
 
 type Provisioner struct {
@@ -86,6 +89,14 @@ func (sd *StateDirectory) Persist() error {
 	if err := os.Mkdir(sd.Path, 0755); err != nil && !errors.Is(err, os.ErrExist) {
 		return fmt.Errorf("failed to create directory '%s': %w", sd.Path, err)
 	}
+	sd.State.Extras.SchemaVersion = StateSchemaVersion
+	lockFile, err := lockStateFile(filepath.Join(sd.Path, FileName+".lock"))
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = unlockStateFile(lockFile)
+	}()
 	out := new(bytes.Buffer)
 	enc := yaml.NewEncoder(out)
 	enc.SetIndent(2)
@@ -119,7 +130,32 @@ func LoadStateDirectory(directory string) (*StateDirectory, bool, error) {
 	if err := dec.Decode(&out); err != nil {
 		return nil, true, fmt.Errorf("state file couldn't be decoded: %w", err)
 	}
+	if out.Extras.SchemaVersion == 0 {
+		out.Extras.SchemaVersion = StateSchemaVersion
+	} else if out.Extras.SchemaVersion > StateSchemaVersion {
+		return nil, true, fmt.Errorf("state schema version %d is newer than supported %d, upgrade the tool", out.Extras.SchemaVersion, StateSchemaVersion)
+	}
 	return &StateDirectory{d, out}, true, nil
+}
+
+func lockStateFile(path string) (*os.File, error) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0755)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open state lock file '%s': %w", path, err)
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("failed to lock state file '%s': %w", path, err)
+	}
+	return f, nil
+}
+
+func unlockStateFile(f *os.File) error {
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_UN); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("failed to unlock state file: %w", err)
+	}
+	return f.Close()
 }
 
 func (p *Provisioner) Matches(uid framework.ResourceUid) bool {
