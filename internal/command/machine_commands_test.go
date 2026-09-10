@@ -13,10 +13,10 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/astromechza/score-flyio/internal/flymachines"
-	"github.com/astromechza/score-flyio/internal/machineconfig"
-	"github.com/astromechza/score-flyio/internal/planner"
-	"github.com/astromechza/score-flyio/internal/state"
+	"github.com/astromechza/score-flyio/pkg/flydeploy/machineconfig"
+	"github.com/astromechza/score-flyio/pkg/flydeploy/planner"
+	"github.com/astromechza/score-flyio/pkg/flymachines"
+	"github.com/astromechza/score-flyio/pkg/state"
 )
 
 func TestMachinePlanIsDeterministicAndDoesNotExposeEnvironmentValues(t *testing.T) {
@@ -202,8 +202,8 @@ func TestMachineSuspendAndResumeTargetManagedMachines(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/apps/score-gateway/machines":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`[
-				{"id":"m1","name":"n1","state":"started","region":"ams","config":{"metadata":{"progresify.group":"api"}}},
-				{"id":"m2","name":"n2","state":"started","region":"ams","config":{"metadata":{"progresify.group":"api"}}},
+				{"id":"m1","name":"n1","state":"started","region":"ams","config":{"metadata":{"flydeploy.group":"api"}}},
+				{"id":"m2","name":"n2","state":"started","region":"ams","config":{"metadata":{"flydeploy.group":"api"}}},
 				{"id":"m3","name":"n3","state":"started","region":"ams","config":{"metadata":{}}}
 			]`))
 		case r.Method == http.MethodPost && (strings.HasSuffix(r.URL.Path, "/suspend") || strings.HasSuffix(r.URL.Path, "/start")):
@@ -245,7 +245,7 @@ func TestMachineStatusSurfacesEventsExitsAndFailedChecks(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/apps/score-gateway/machines":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`[
-				{"id":"m1","name":"n1","state":"started","region":"ams","checks":[{"name":"api-ready","status":"passing"},{"name":"api-live","status":"failing"}],"config":{"metadata":{"progresify.group":"api"}}},
+				{"id":"m1","name":"n1","state":"started","region":"ams","checks":[{"name":"api-ready","status":"passing"},{"name":"api-live","status":"failing"}],"config":{"metadata":{"flydeploy.group":"api"}}},
 				{"id":"m2","name":"n2","state":"started","region":"ams","config":{"metadata":{}}}
 			]`))
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/events"):
@@ -283,8 +283,8 @@ func TestMachineLogsExecsFlyPerTargetMachine(t *testing.T) {
 		if r.Method == http.MethodGet && r.URL.Path == "/apps/score-gateway/machines" {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`[
-				{"id":"m1","state":"started","config":{"metadata":{"progresify.group":"api"}}},
-				{"id":"m2","state":"started","config":{"metadata":{"progresify.group":"api"}}},
+				{"id":"m1","state":"started","config":{"metadata":{"flydeploy.group":"api"}}},
+				{"id":"m2","state":"started","config":{"metadata":{"flydeploy.group":"api"}}},
 				{"id":"m3","state":"started","config":{"metadata":{}}}
 			]`))
 			return

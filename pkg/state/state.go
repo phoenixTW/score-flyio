@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package state persists score project state with locking and schema versioning.
 package state
 
 import (

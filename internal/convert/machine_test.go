@@ -9,9 +9,9 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/astromechza/score-flyio/internal"
-	"github.com/astromechza/score-flyio/internal/machineconfig"
 	"github.com/astromechza/score-flyio/internal/provisioners"
-	"github.com/astromechza/score-flyio/internal/state"
+	"github.com/astromechza/score-flyio/pkg/flydeploy/machineconfig"
+	"github.com/astromechza/score-flyio/pkg/state"
 )
 
 func happyWorkloadSpec() scoretypes.Workload {
@@ -187,7 +187,7 @@ func happyPlan() *machineconfig.Plan {
 				Metadata: map[string]string{
 					"progresify.workload":                 "api",
 					"progresify.environment":              "staging",
-					"progresify.group":                    "app",
+					"flydeploy.group":                     "app",
 					"progresify.renderer-version":         "0.1.0",
 					"progresify.owner":                    "platform",
 					"progresify.secret-namespace":         "ns",
@@ -228,7 +228,7 @@ func happyPlan() *machineconfig.Plan {
 				Metadata: map[string]string{
 					"progresify.workload":         "api",
 					"progresify.environment":      "staging",
-					"progresify.group":            "worker",
+					"flydeploy.group":             "worker",
 					"progresify.renderer-version": "0.1.0",
 					"progresify.owner":            "platform",
 					"progresify.secret-namespace": "ns",

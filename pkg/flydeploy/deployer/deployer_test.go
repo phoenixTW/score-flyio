@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/astromechza/score-flyio/internal"
-	"github.com/astromechza/score-flyio/internal/flymachines"
+	"github.com/astromechza/score-flyio/pkg/flymachines"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -394,18 +394,18 @@ func TestWaitForHealthyTimesOutWhenNotStarted(t *testing.T) {
 func TestMachinesByGroupFiltersOnMetadata(t *testing.T) {
 	withGroup := flymachines.Machine{
 		Id:     internal.Ref("m1"),
-		Config: &flymachines.FlyMachineConfig{Metadata: internal.Ref(map[string]string{"progresify.group": "app"})},
+		Config: &flymachines.FlyMachineConfig{Metadata: internal.Ref(map[string]string{"flydeploy.group": "app"})},
 	}
 	nilConfig := flymachines.Machine{Id: internal.Ref("m2")}
 	nilMetadata := flymachines.Machine{Id: internal.Ref("m3"), Config: &flymachines.FlyMachineConfig{}}
 	otherGroup := flymachines.Machine{
 		Id:     internal.Ref("m4"),
-		Config: &flymachines.FlyMachineConfig{Metadata: internal.Ref(map[string]string{"progresify.group": "worker"})},
+		Config: &flymachines.FlyMachineConfig{Metadata: internal.Ref(map[string]string{"flydeploy.group": "worker"})},
 	}
-	out := MachinesByGroup([]flymachines.Machine{withGroup, nilConfig, nilMetadata, otherGroup}, "progresify.group", "app")
+	out := MachinesByGroup([]flymachines.Machine{withGroup, nilConfig, nilMetadata, otherGroup}, "flydeploy.group", "app")
 	assert.Len(t, out, 1)
 	assert.Equal(t, "m1", internal.DerefOr(out[0].Id, ""))
-	assert.Empty(t, MachinesByGroup(nil, "progresify.group", "app"))
+	assert.Empty(t, MachinesByGroup(nil, "flydeploy.group", "app"))
 }
 
 func TestAppLookupCreateAndEnsureAreIdempotent(t *testing.T) {

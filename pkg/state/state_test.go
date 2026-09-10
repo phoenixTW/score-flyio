@@ -104,7 +104,7 @@ func TestPersistDoesNotSerializeSecretValues(t *testing.T) {
 	spec.Metadata = scoretypes.WorkloadMetadata{"name": "api"}
 	spec.Containers = map[string]scoretypes.Container{
 		"api": {
-			Image:     "ghcr.io/progresify/api:1.2.3",
+			Image:     "ghcr.io/example/api:1.2.3",
 			Variables: map[string]string{"API_TOKEN": "${resources.auth.token}"},
 		},
 	}

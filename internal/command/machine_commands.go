@@ -23,13 +23,13 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/astromechza/score-flyio/internal/convert"
-	"github.com/astromechza/score-flyio/internal/deployer"
-	"github.com/astromechza/score-flyio/internal/flymachines"
-	"github.com/astromechza/score-flyio/internal/machineconfig"
-	"github.com/astromechza/score-flyio/internal/planner"
 	"github.com/astromechza/score-flyio/internal/provisioners"
-	"github.com/astromechza/score-flyio/internal/reconcile"
-	"github.com/astromechza/score-flyio/internal/state"
+	"github.com/astromechza/score-flyio/pkg/flydeploy/deployer"
+	"github.com/astromechza/score-flyio/pkg/flydeploy/machineconfig"
+	"github.com/astromechza/score-flyio/pkg/flydeploy/planner"
+	"github.com/astromechza/score-flyio/pkg/flydeploy/reconcile"
+	"github.com/astromechza/score-flyio/pkg/flymachines"
+	"github.com/astromechza/score-flyio/pkg/state"
 )
 
 type machineCommandOptions struct {
@@ -587,7 +587,7 @@ func checkTunnelHost(cmd *cobra.Command, hostname string) {
 		cmd.PrintErrln(fmt.Sprintf("warning: tunnel health check failed for %s: %v", hostname, err))
 		return
 	}
-	response.Body.Close()
+	_ = response.Body.Close()
 }
 
 func runMachineReconcile(cmd *cobra.Command, args []string) error {

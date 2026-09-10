@@ -24,7 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/astromechza/score-flyio/internal/state"
+	"github.com/astromechza/score-flyio/pkg/state"
 )
 
 func TestInitNominal(t *testing.T) {

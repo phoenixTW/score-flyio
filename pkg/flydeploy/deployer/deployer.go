@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/astromechza/score-flyio/internal"
-	"github.com/astromechza/score-flyio/internal/flymachines"
+	"github.com/astromechza/score-flyio/pkg/flymachines"
 )
 
 const (

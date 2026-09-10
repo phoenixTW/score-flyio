@@ -8,8 +8,8 @@ import (
 	scoretypes "github.com/score-spec/score-go/types"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/astromechza/score-flyio/internal/machineconfig"
-	"github.com/astromechza/score-flyio/internal/state"
+	"github.com/astromechza/score-flyio/pkg/flydeploy/machineconfig"
+	"github.com/astromechza/score-flyio/pkg/state"
 )
 
 func TestMachinePlanMapsScoreAndProgresifyFields(t *testing.T) {
@@ -89,7 +89,7 @@ func TestMachinePlanMapsScoreAndProgresifyFields(t *testing.T) {
 	assert.Equal(t, 1, web.MinMachines)
 	assert.Equal(t, 3, web.MaxMachines)
 	assert.Equal(t, machineconfig.RestartPolicyAlways, web.Restart)
-	assert.Equal(t, "web", web.Metadata["progresify.group"])
+	assert.Equal(t, "web", web.Metadata["flydeploy.group"])
 	assert.Equal(t, "platform", web.Metadata["progresify.owner"])
 	assert.Equal(t, "gateway-staging", web.Metadata["progresify.secret-namespace"])
 	if !assert.Len(t, web.Containers, 1) {

@@ -32,12 +32,12 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/astromechza/score-flyio/internal/convert"
-	"github.com/astromechza/score-flyio/internal/deployer"
-	"github.com/astromechza/score-flyio/internal/flymachines"
 	"github.com/astromechza/score-flyio/internal/progresify"
 	"github.com/astromechza/score-flyio/internal/provisioners"
-	"github.com/astromechza/score-flyio/internal/reconcile"
-	"github.com/astromechza/score-flyio/internal/state"
+	"github.com/astromechza/score-flyio/pkg/flydeploy/deployer"
+	"github.com/astromechza/score-flyio/pkg/flydeploy/reconcile"
+	"github.com/astromechza/score-flyio/pkg/flymachines"
+	"github.com/astromechza/score-flyio/pkg/state"
 )
 
 const (

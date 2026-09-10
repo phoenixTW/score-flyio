@@ -8,13 +8,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/astromechza/score-flyio/internal/flymachines"
-	"github.com/astromechza/score-flyio/internal/machineconfig"
+	"github.com/astromechza/score-flyio/pkg/flydeploy/machineconfig"
+	"github.com/astromechza/score-flyio/pkg/flymachines"
 )
 
 const (
-	MetadataGroup = "progresify.group"
-	MetadataHash  = "progresify.config-hash"
+	MetadataGroup = "flydeploy.group"
+	MetadataHash  = "flydeploy.config-hash"
 )
 
 type Action string

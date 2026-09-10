@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/astromechza/score-flyio/internal/state"
+	"github.com/astromechza/score-flyio/pkg/state"
 )
 
 func flyRegion() (string, error) {

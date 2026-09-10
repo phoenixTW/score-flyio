@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/astromechza/score-flyio/internal"
-	"github.com/astromechza/score-flyio/internal/flymachines"
-	"github.com/astromechza/score-flyio/internal/machineconfig"
+	"github.com/astromechza/score-flyio/pkg/flydeploy/machineconfig"
+	"github.com/astromechza/score-flyio/pkg/flymachines"
 )
 
 func testPlan(t *testing.T) *machineconfig.Plan {

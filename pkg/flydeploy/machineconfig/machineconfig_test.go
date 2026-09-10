@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/astromechza/score-flyio/internal"
-	"github.com/astromechza/score-flyio/internal/flymachines"
+	"github.com/astromechza/score-flyio/pkg/flymachines"
 )
 
 func happyGroup() Group {

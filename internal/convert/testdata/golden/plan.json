@@ -72,9 +72,9 @@
         }
       ],
       "metadata": {
+        "flydeploy.group": "app",
         "flydeploy.ingress-hostname": "api.flowbit.work",
         "progresify.environment": "staging",
-        "progresify.group": "app",
         "progresify.owner": "platform",
         "progresify.renderer-version": "0.1.0",
         "progresify.secret-namespace": "ns",
@@ -134,8 +134,8 @@
       "max_machines": 1,
       "restart": "no",
       "metadata": {
+        "flydeploy.group": "worker",
         "progresify.environment": "staging",
-        "progresify.group": "worker",
         "progresify.owner": "platform",
         "progresify.renderer-version": "0.1.0",
         "progresify.secret-namespace": "ns",

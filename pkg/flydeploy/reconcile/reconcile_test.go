@@ -12,9 +12,10 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/astromechza/score-flyio/internal"
-	"github.com/astromechza/score-flyio/internal/deployer"
-	"github.com/astromechza/score-flyio/internal/flymachines"
-	"github.com/astromechza/score-flyio/internal/machineconfig"
+	"github.com/astromechza/score-flyio/pkg/flydeploy/deployer"
+	"github.com/astromechza/score-flyio/pkg/flydeploy/machineconfig"
+	"github.com/astromechza/score-flyio/pkg/flydeploy/planner"
+	"github.com/astromechza/score-flyio/pkg/flymachines"
 )
 
 func TestPlanReadsLiveMachinesAndProducesNoop(t *testing.T) {
@@ -22,7 +23,7 @@ func TestPlanReadsLiveMachinesAndProducesNoop(t *testing.T) {
 		Name: "app", Region: "iad", MinMachines: 1, MaxMachines: 1,
 		Guest:      &machineconfig.Guest{Cpus: 1, MemoryMb: 256},
 		Containers: []machineconfig.Container{{Name: "api", Image: "example/api@sha256:" + strings.Repeat("a", 64), ImageDigest: "sha256:" + strings.Repeat("a", 64)}},
-		Metadata:   map[string]string{"progresify.group": "app"},
+		Metadata:   map[string]string{planner.MetadataGroup: "app"},
 	}
 	hash, err := machineconfig.ConfigHash(&group)
 
@@ -31,7 +32,7 @@ func TestPlanReadsLiveMachinesAndProducesNoop(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/apps/test-app/machines", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
-		metadata := map[string]string{"progresify.group": "app", "progresify.config-hash": hash}
+		metadata := map[string]string{planner.MetadataGroup: "app", planner.MetadataHash: hash}
 		_ = json.NewEncoder(w).Encode([]flymachines.Machine{{Id: internal.Ref("m1"), Region: internal.Ref("iad"), Config: &flymachines.FlyMachineConfig{Metadata: &metadata}}})
 	}))
 	defer server.Close()
@@ -52,8 +53,8 @@ func TestConfigWithHashDoesNotMutateGroup(t *testing.T) {
 	config := configWithHash(group, "abc")
 
 	assert.Equal(t, "platform", group.Metadata["owner"])
-	assert.NotEqual(t, "abc", group.Metadata["progresify.config-hash"])
-	assert.Equal(t, "abc", (*config.Metadata)["progresify.config-hash"])
+	assert.NotEqual(t, "abc", group.Metadata[planner.MetadataHash])
+	assert.Equal(t, "abc", (*config.Metadata)[planner.MetadataHash])
 }
 
 func releaseTestGroup() machineconfig.Group {
@@ -61,7 +62,7 @@ func releaseTestGroup() machineconfig.Group {
 		Name: "app", Region: "iad", MinMachines: 1, MaxMachines: 1,
 		Guest:      &machineconfig.Guest{Cpus: 1, MemoryMb: 256},
 		Containers: []machineconfig.Container{{Name: "api", Image: "example/api@sha256:" + strings.Repeat("a", 64), ImageDigest: "sha256:" + strings.Repeat("a", 64)}},
-		Metadata:   map[string]string{"progresify.group": "app"},
+		Metadata:   map[string]string{planner.MetadataGroup: "app"},
 	}
 }
 
@@ -80,7 +81,7 @@ func releaseTestServer(t *testing.T, releaseExitCode *int) (*httptest.Server, *[
 				Config *flymachines.FlyMachineConfig `json:"config"`
 			}
 			_ = json.NewDecoder(r.Body).Decode(&request)
-			isRelease := request.Config != nil && request.Config.Metadata != nil && (*request.Config.Metadata)["progresify.group"] == "release"
+			isRelease := request.Config != nil && request.Config.Metadata != nil && (*request.Config.Metadata)[planner.MetadataGroup] == "release"
 			if isRelease {
 				creates = append(creates, "release")
 				_ = json.NewEncoder(w).Encode(flymachines.Machine{Id: internal.Ref("rel-1"), Name: request.Name})
@@ -98,7 +99,7 @@ func releaseTestServer(t *testing.T, releaseExitCode *int) (*httptest.Server, *[
 		case r.Method == http.MethodGet && r.URL.Path == "/apps/test-app/machines/m1/wait":
 			_ = json.NewEncoder(w).Encode(struct{}{})
 		case r.Method == http.MethodGet && r.URL.Path == "/apps/test-app/machines/m1":
-			_ = json.NewEncoder(w).Encode(flymachines.Machine{Id: internal.Ref("m1"), State: internal.Ref("started"), Config: &flymachines.FlyMachineConfig{Metadata: &map[string]string{"progresify.group": "app"}}})
+			_ = json.NewEncoder(w).Encode(flymachines.Machine{Id: internal.Ref("m1"), State: internal.Ref("started"), Config: &flymachines.FlyMachineConfig{Metadata: &map[string]string{planner.MetadataGroup: "app"}}})
 		default:
 			http.NotFound(w, r)
 		}
@@ -171,6 +172,6 @@ func TestReleaseMachineConfigStripsServicesAndChecks(t *testing.T) {
 	config := releaseMachineConfig(group)
 
 	assert.Nil(t, config.Services)
-	assert.Equal(t, "release", (*config.Metadata)["progresify.group"])
+	assert.Equal(t, "release", (*config.Metadata)[planner.MetadataGroup])
 	assert.Equal(t, "no", string(internal.DerefOr(config.Restart.Policy, "")))
 }

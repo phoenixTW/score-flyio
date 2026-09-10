@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/astromechza/score-flyio/internal"
-	"github.com/astromechza/score-flyio/internal/flymachines"
+	"github.com/astromechza/score-flyio/pkg/flymachines"
 )
 
 const ContainerNamePattern = `^[a-z][a-z0-9-]{0,62}$`

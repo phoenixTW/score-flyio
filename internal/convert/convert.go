@@ -36,7 +36,7 @@ import (
 	"github.com/astromechza/score-flyio/internal/appconfig"
 	"github.com/astromechza/score-flyio/internal/progresify"
 	"github.com/astromechza/score-flyio/internal/provisioners"
-	"github.com/astromechza/score-flyio/internal/state"
+	"github.com/astromechza/score-flyio/pkg/state"
 )
 
 func anyFromMap[k string, v any](in map[k]v) (k, v, bool) {

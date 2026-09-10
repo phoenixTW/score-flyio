@@ -14,10 +14,11 @@ import (
 	"github.com/score-spec/score-go/framework"
 	scoretypes "github.com/score-spec/score-go/types"
 
-	"github.com/astromechza/score-flyio/internal/machineconfig"
 	"github.com/astromechza/score-flyio/internal/progresify"
 	"github.com/astromechza/score-flyio/internal/provisioners"
-	"github.com/astromechza/score-flyio/internal/state"
+	"github.com/astromechza/score-flyio/pkg/flydeploy/machineconfig"
+	"github.com/astromechza/score-flyio/pkg/flydeploy/planner"
+	"github.com/astromechza/score-flyio/pkg/state"
 )
 
 const metadataKeyPrefix = "progresify."
@@ -337,7 +338,7 @@ func groupMetadata(workloadName string, environment string, rendererVersion stri
 	out := map[string]string{
 		metadataKeyPrefix + "workload":         workloadName,
 		metadataKeyPrefix + "environment":      environment,
-		metadataKeyPrefix + "group":            groupName,
+		planner.MetadataGroup:                  groupName,
 		metadataKeyPrefix + "renderer-version": rendererVersion,
 		metadataKeyPrefix + "owner":            pm.Owner,
 		metadataKeyPrefix + "secret-namespace": pm.SecretNamespace,

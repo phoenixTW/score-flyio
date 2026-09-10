@@ -4,6 +4,24 @@ This repo is forked from the <https://github.com/score-spec/score-implementation
 
 This is a rewrite of <https://github.com/astromechza/score-flyio-archived> since the Score spec has moved on and our understanding of resource provisioning and Score feature compatibility is more complete now.
 
+## Library packages
+
+The reusable, domain-neutral Fly Machines deployment machinery lives under `pkg/` and can be imported by any Score renderer or other tooling:
+
+- `pkg/flymachines` — generated Fly Machines API client
+- `pkg/flydeploy/machineconfig` — multi-container machine plan model, validation, and Fly config conversion
+- `pkg/flydeploy/planner` — deterministic diff between desired plans and live machines
+- `pkg/flydeploy/deployer` — Machines API primitives (create, update, wait, suspend, resume, events)
+- `pkg/flydeploy/reconcile` — plan application with rollback, readiness waits, and one-off release commands
+- `pkg/state` — project state persistence with schema versioning and file locking
+
+These packages know nothing about any specific platform, company, or metadata
+contract. The library owns only the `flydeploy.group` and `flydeploy.config-hash`
+machine metadata keys; all other metadata is caller-supplied. The `internal/`
+tree holds this renderer's domain glue: the `metadata.progresify` contract
+adapter (`internal/progresify`, `internal/convert`) and the CLI
+(`internal/command`) that wires everything together.
+
 ## Installation
 
 Download and extract the binary from the latest release on GitHub: https://github.com/astromechza/score-flyio/releases. Or build from source via `go install github.com/astromechza/score-flyio@latest`.
