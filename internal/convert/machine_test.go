@@ -74,11 +74,11 @@ func happyWorkloadSpec() scoretypes.Workload {
 					"API_TOKEN":    "${resources.auth.token}",
 					"LOG_LEVEL":    "info",
 				},
-				Files: []scoretypes.ContainerFilesElem{
-					{Target: "/etc/config.yaml", Content: internal.Ref("hello ${metadata.name}")},
+				Files: map[string]scoretypes.ContainerFile{
+					"/etc/config.yaml": {Content: internal.Ref("hello ${metadata.name}")},
 				},
-				Volumes: []scoretypes.ContainerVolumesElem{
-					{Source: "data-vol", Target: "/data"},
+				Volumes: map[string]scoretypes.ContainerVolume{
+					"/data": {Source: "data-vol"},
 				},
 				LivenessProbe: &scoretypes.ContainerProbe{
 					HttpGet: &scoretypes.HttpProbe{
@@ -351,10 +351,9 @@ func TestMachinePlanWithSecretsRejectsContainerWithoutProcess(t *testing.T) {
 func TestMachinePlanWithSecretsRejectsSecretBackedFiles(t *testing.T) {
 	currentState := happyState()
 	api := currentState.Workloads["api"].Spec.Containers["api"]
-	api.Files = append(api.Files, scoretypes.ContainerFilesElem{
-		Target:  "/run/secrets/token",
+	api.Files["/run/secrets/token"] = scoretypes.ContainerFile{
 		Content: internal.Ref("${resources.auth.token}"),
-	})
+	}
 	currentState.Workloads["api"].Spec.Containers["api"] = api
 
 	plan, secrets, err := MachinePlanWithSecrets(currentState, "api", "staging", "0.1.0")

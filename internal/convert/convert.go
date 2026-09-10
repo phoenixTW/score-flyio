@@ -154,9 +154,9 @@ func Workload(currentState *state.State, workloadName string) (*appconfig.AppCon
 	}
 	if len(container.Files) > 0 {
 		output.Files = make([]appconfig.File, 0, len(container.Files))
-		for i, f := range container.Files {
+		for target, f := range container.Files {
 			if f.Mode != nil {
-				return nil, nil, fmt.Errorf("container[%s].files[%d]: mode not supported", containerName, i)
+				return nil, nil, fmt.Errorf("container[%s].files[%s]: mode not supported", containerName, target)
 			}
 			if f.Source != nil {
 				if !filepath.IsAbs(*f.Source) && workload.File != nil {
@@ -169,20 +169,20 @@ func Workload(currentState *state.State, workloadName string) (*appconfig.AppCon
 				if f.Content != nil {
 					out, err := framework.SubstituteString(*f.Content, sf2)
 					if err != nil {
-						return nil, nil, fmt.Errorf("container[%s].files[%d]: failed to interpolate in contents: %w", containerName, i, err)
+						return nil, nil, fmt.Errorf("container[%s].files[%s]: failed to interpolate in contents: %w", containerName, target, err)
 					}
 					f.Content = &out
 				} else if f.Source != nil {
 					raw, err := os.ReadFile(*f.Source)
 					if err != nil {
-						return nil, nil, fmt.Errorf("container[%s].files[%d]: failed to read file: %w", containerName, i, err)
+						return nil, nil, fmt.Errorf("container[%s].files[%s]: failed to read file: %w", containerName, target, err)
 					} else if !utf8.Valid(raw) {
-						return nil, nil, fmt.Errorf("container[%s].files[%d]: cannot perform interpolation on non utf-8 file (did you mean to set noExpand?)", containerName, i)
+						return nil, nil, fmt.Errorf("container[%s].files[%s]: cannot perform interpolation on non utf-8 file (did you mean to set noExpand?)", containerName, target)
 					}
 					stringRaw := string(raw)
 					out, err := framework.SubstituteString(stringRaw, sf2)
 					if err != nil {
-						return nil, nil, fmt.Errorf("container[%s].files[%d]: failed to interpolate in source file: %w", containerName, i, err)
+						return nil, nil, fmt.Errorf("container[%s].files[%s]: failed to interpolate in source file: %w", containerName, target, err)
 					}
 					if stringRaw != out {
 						f.Source = nil
@@ -192,40 +192,40 @@ func Workload(currentState *state.State, workloadName string) (*appconfig.AppCon
 			}
 			if f.Content != nil {
 				if *sa {
-					slog.Warn("Secret accessed as part of resolving container files, marking output as a runtime secret", slog.String("file", f.Target))
+					slog.Warn("Secret accessed as part of resolving container files, marking output as a runtime secret", slog.String("file", target))
 					h := sha256.New()
 					h.Write([]byte(workloadName))
 					h.Write([]byte(containerName))
-					h.Write([]byte(f.Target))
+					h.Write([]byte(target))
 					hs := hex.EncodeToString(h.Sum(nil))
 					outputSecrets[hs] = base64.StdEncoding.EncodeToString([]byte(*f.Content))
-					output.Files = append(output.Files, appconfig.File{GuestPath: f.Target, SecretName: &hs})
+					output.Files = append(output.Files, appconfig.File{GuestPath: target, SecretName: &hs})
 				} else {
 					encoded := base64.StdEncoding.EncodeToString([]byte(*f.Content))
-					output.Files = append(output.Files, appconfig.File{GuestPath: f.Target, RawValue: &encoded})
+					output.Files = append(output.Files, appconfig.File{GuestPath: target, RawValue: &encoded})
 				}
 				continue
 			} else if f.Source != nil {
-				output.Files = append(output.Files, appconfig.File{GuestPath: f.Target, LocalPath: f.Source})
+				output.Files = append(output.Files, appconfig.File{GuestPath: target, LocalPath: f.Source})
 				continue
 			}
-			return nil, nil, fmt.Errorf("container[%s].files[%d]: content or source must be set", containerName, i)
+			return nil, nil, fmt.Errorf("container[%s].files[%s]: content or source must be set", containerName, target)
 		}
 	}
 
 	if len(container.Volumes) > 0 {
 		output.Mounts = make([]appconfig.Mount, 0, len(container.Volumes))
-		for i, volume := range container.Volumes {
+		for target, volume := range container.Volumes {
 			if volume.Path != nil && *volume.Path != "/" {
-				return nil, nil, fmt.Errorf("container[%s].volumes[%d]: sub-path is not supported", containerName, i)
+				return nil, nil, fmt.Errorf("container[%s].volumes[%s]: sub-path is not supported", containerName, target)
 			} else if volume.ReadOnly != nil && *volume.ReadOnly {
-				return nil, nil, fmt.Errorf("container[%s].volumes[%d]: read-only=true is not supported", containerName, i)
+				return nil, nil, fmt.Errorf("container[%s].volumes[%s]: read-only=true is not supported", containerName, target)
 			}
 			source := volume.Source
 			if source, err = framework.SubstituteString(source, sf); err != nil {
-				return nil, nil, fmt.Errorf("container[%s].volumes[%d]: failed to interpolate source: %w", containerName, i, err)
+				return nil, nil, fmt.Errorf("container[%s].volumes[%s]: failed to interpolate source: %w", containerName, target, err)
 			}
-			output.Mounts = append(output.Mounts, appconfig.Mount{Source: source, Destination: volume.Target})
+			output.Mounts = append(output.Mounts, appconfig.Mount{Source: source, Destination: target})
 		}
 	}
 

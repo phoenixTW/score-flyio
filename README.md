@@ -1,341 +1,80 @@
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 # score-flyio
 
-This repo is forked from the <https://github.com/score-spec/score-implementation-sample> template. The intention is for this to be a valid Score implementation that can construct flyctl config files and use resource provisioning and all the platform specific features provided by Fly. However, since Fly is considerably different to Kubernetes or Docker Compose, certain Score features will not be available and will be rejected if used in workloads.
+A [Score](https://score.dev) implementation for [Fly.io](https://fly.io). Describe your workload once in a vendor-neutral Score spec; `score-flyio` converts it into Fly Machines deployment plans — or classic `fly.toml` for single-container apps — and deploys it with resource provisioning, secret handling, and idempotent reconciliation.
 
-This is a rewrite of <https://github.com/astromechza/score-flyio-archived> since the Score spec has moved on and our understanding of resource provisioning and Score feature compatibility is more complete now.
+Score workloads carry optional `metadata.progresify` for multi-container machine groups (colocated containers, per-group scale, release commands). Workloads without it use the legacy single-container `fly.toml` path.
 
-## Releases
-
-Releases are cut with [GoReleaser](https://goreleaser.com) — the same toolchain
-Fly.io uses to ship `flyctl` — driven by version tags. Pushing a `v*` tag
-builds cross-platform binaries (linux/darwin/windows on amd64/arm64), archives,
-and checksums, and publishes them to the GitHub release:
+## Quickstart
 
 ```sh
-git tag v0.1.0
-git push origin v0.1.0
-```
+go install github.com/phoenixTW/score-flyio@latest
+# or download a binary from https://github.com/phoenixTW/score-flyio/releases
 
-CI (build, test, lint) runs on every push to `main` and on pull requests; the
-release workflow runs only for tags.
-
-## Library packages
-
-The reusable, domain-neutral Fly Machines deployment machinery lives under `pkg/` and can be imported by any Score renderer or other tooling:
-
-- `pkg/flymachines` — generated Fly Machines API client
-- `pkg/flydeploy/machineconfig` — multi-container machine plan model, validation, and Fly config conversion
-- `pkg/flydeploy/planner` — deterministic diff between desired plans and live machines
-- `pkg/flydeploy/deployer` — Machines API primitives (create, update, wait, suspend, resume, events)
-- `pkg/flydeploy/reconcile` — plan application with rollback, readiness waits, and one-off release commands
-- `pkg/state` — project state persistence with schema versioning and file locking
-
-These packages know nothing about any specific platform, company, or metadata
-contract. The library owns only the `flydeploy.group` and `flydeploy.config-hash`
-machine metadata keys; all other metadata is caller-supplied. The `internal/`
-tree holds this renderer's domain glue: the `metadata.progresify` contract
-adapter (`internal/progresify`, `internal/convert`) and the CLI
-(`internal/command`) that wires everything together.
-
-## Installation
-
-Download and extract the binary from the latest release on GitHub: <https://github.com/phoenixTW/score-flyio/releases>. Or build from source via `go install github.com/phoenixTW/score-flyio@latest`.
-
-### Workflow
-
-Initialize the project directory. Because app names must be globally unique in Fly, you may need to use the `--fly-app-prefix` to add to the front of the Score workload names. This prefix should also be used by provisioners for namespacing any other apps created for this project.
-
-```
-score-flyio init --fly-app-prefix my-app-prefix-
-```
-
-Then generate the output Fly toml files per Score workload, set the secrets on the app, and deploy the app all in one command:
-
-```
 export FLY_API_TOKEN=$(fly tokens create org -x '24h' -o personal)
-export FLY_REGION_NAME=lhr
+
+score-flyio init --fly-app-prefix my-app-
 score-flyio generate score.yaml --deploy
 ```
 
-Then assign a shared ip if needed for the app that needs ingress networking:
+Legacy single-container flow: `generate` writes `<workload>.toml` + `.env`, sets secrets, and deploys. Machine flow (multi-container / `metadata.progresify`): `generate --deploy` drives the Fly Machines API directly — it never falls back to an invalid TOML plan.
 
-```
-fly ip allocate-v4 -a my-app-prefix-example-workload --shared
-```
+### Machine deployment commands
 
-See [./samples](./samples) for some sample Score apps that we use during testing to check the conversion process. These should all be deployable.
+| Command | Purpose |
+| --- | --- |
+| `score-flyio plan score.yaml` | offline diff with JSON output (`--dry-run`) |
+| `score-flyio apply score.yaml` | deploy plan; rollback on failure |
+| `score-flyio validate score.yaml` | validate the workload and plan |
+| `score-flyio status score.yaml` | machines, checks, events, exits |
+| `score-flyio logs score.yaml` | stream per-machine logs |
+| `score-flyio scale score.yaml --group app --min 1 --max 3` | adjust group bounds (`--apply` to deploy) |
+| `score-flyio suspend/resume score.yaml` | scale to zero and back |
+| `score-flyio reconcile score.yaml` | re-apply desired state |
+| `score-flyio destroy score.yaml --yes` | delete managed machines and app |
 
-### Supported 🟢
+Apply is idempotent (config-hash no-op re-runs), runs one-off release commands exactly once per change, waits for health checks, and rolls back partial failures.
 
-- A single workload container
-- Setting a container image or using a local Dockerfile+.dockerignore built by Fly.io on deploy
-- Setting `command` and `args` overrides
-- Setting `variables` for environment variables including placeholders
-- Setting cpu and memory resources in rounded multiples of 1 cpu, 256MB memory using the maximum of resource requests and resource limits if defined
-- Mounting files
-- Mounting a named Fly.io volume
-- Exposing tcp and udp network services with annotations for enabling Fly Proxy handlers
-- Converting liveness and readiness http get probes into Fly checks
-- Resource Provisioning using static json, command execution, or HTTP request
-- Secret variables and mounted files when they contain secret outputs from resources
+## Feature support
 
-### Not supported 🔴
+**Supported:** single and multi-container workloads (machine path) · image or Dockerfile builds · `command`/`args` · variables with placeholders · cpu/memory resources · mounted files and Fly volumes · tcp/udp services with Fly Proxy handlers · liveness/readiness http probes as checks · resource provisioning (static, cmd, http) · secret variables and files.
 
-- Multiple workload containers (This may improve once <https://community.fly.io/t/docker-without-docker-now-with-containers/22903> is released in Fly.io)
-- Setting the mode for mounted files (not supported by Fly)
-- Setting the subpath or enabling readonly on mounted volumes (not supported by Fly)
+**Not supported:** file mount modes · volume sub-paths and read-only mounts.
 
-## Supported Workload annotations
+## Workload annotations
 
-`score-flyio` supports the following workload annotations that will modify the runtime behavior of the application when the annotations are found in the Workload metadata:
+| Annotation | Value |
+| --- | --- |
+| `score-flyio.phoenixtw.github.com/service-<port>-handlers` | comma-separated [Fly Proxy handlers](https://fly.io/docs/reference/fly-proxy/#connection-handlers), e.g. `tls,http` |
+| `score-flyio.phoenixtw.github.com/service-<port>-http-options` | JSON, e.g. `'{"idle_timeout": 60}'` |
+| `score-flyio.phoenixtw.github.com/service-<port>-auto-stop` | `stop` (also enables auto-start) |
+| `score-flyio.phoenixtw.github.com/service-<port>-min-running` | minimum running machines, e.g. `"1"` |
+| `score-flyio.phoenixtw.github.com/service-<port>-concurrency` | JSON, e.g. `'{"type":"requests","hard_limit":25,"soft_limit":20}'` |
 
-**`score-flyio.phoenixtw.github.com/service-<portname>-handlers`**
+## Library packages
 
-Expects a comma-seperated list of [Fly Proxy connection handlers](https://fly.io/docs/reference/fly-proxy/#connection-handlers) and will add these to the `[[service.ports]]` entry for the port.
+The deployment machinery under `pkg/` is domain-neutral and importable by any tool:
 
-For example, `score-flyio.phoenixtw.github.com/service-web-handlers: tls,http`.
+- `pkg/flymachines` — generated Fly Machines API client
+- `pkg/flydeploy/machineconfig` — machine plan model, validation, Fly config conversion
+- `pkg/flydeploy/planner` — deterministic diff between plans and live machines
+- `pkg/flydeploy/deployer` — Machines API primitives
+- `pkg/flydeploy/reconcile` — apply with rollback, readiness waits, release commands
+- `pkg/state` — project state with schema versioning and file locking
 
-**`score-flyio.phoenixtw.github.com/service-<portname>-http-options`**
+The library owns only `flydeploy.group` / `flydeploy.config-hash` metadata keys; everything else is caller-supplied. The `internal/` tree holds this renderer's `metadata.progresify` adapter and the CLI.
 
-Expects a serialized JSON payload that can contain the `http_service.http_options` attributes as documented in [the docs](https://fly.io/docs/reference/configuration/#http_service-http_options-idle_timeout).
+## Resources and state
 
-For example, `score-flyio.phoenixtw.github.com/service-web-http-options: '{"idle_timeout": 60}'`.
+Provisioners (`score-flyio provisioners add ...`) support `static` JSON, `cmd` binaries, and `http` endpoints; a built-in Fly Postgres provisioner is included. Resource state and provisioner config persist to `.score-flyio/state.yaml` — treat it like Terraform state: keep it per environment, backed up, and access-controlled. See the [Score docs](https://docs.score.dev/docs/) for resource semantics.
 
-**`score-flyio.phoenixtw.github.com/service-<portname>-auto-stop`**
+Sample Score specs live in [./samples](./samples).
 
-Enables Fly Proxy based auto-stop to the string set in this attribute. This also enables auto-start.
+## Releases
 
-For example, `score-flyio.phoenixtw.github.com/service-web-auto-stop: stop`.
+Releases are cut with [GoReleaser](https://goreleaser.com) — the toolchain Fly.io uses for `flyctl` — driven by `v*` tags: cross-platform binaries (linux/darwin/windows, amd64/arm64), archives, and checksums publish to the GitHub release. CI runs build, test, and lint on every push and pull request.
 
-**`score-flyio.phoenixtw.github.com/service-<portname>-min-running`**
+## License
 
-Sets the minimum number of machines that must remain running.
-
-For example, `score-flyio.phoenixtw.github.com/service-web-min-running: "1"`.
-
-**`score-flyio.phoenixtw.github.com/service-<portname>-concurrency`**
-
-Sets the Fly Proxy request routing concurrency for load balancing requests between machines. This expects a JSON payload.
-
-For example, `score-flyio.phoenixtw.github.com/service-web-concurrency: '{"type": "requests", "hard_limit": 25, "soft_limit": 20}'`.
-
-## State storage
-
-All state including secret values from resource provisioners, are stored in the local `.score-flyio/state.yaml` file. When deploying as part of a CI pipeline, this file is vital to keep safe and control access to. This is similar to a Terraform or OpenTofu state file stored locally. This file should be maintained per deployment environment. Since it may contain unique ids and random data that cannot be retrieved once lost.
-
-Some recommended methods of storing this file:
-
-- Object Storage
-- local persistent volume
-- password manager such as 1password
-- Hashicorp Vault
-- Consul
-
-In the future we may build state file download, upload, and mediation into `score-flyio`.
-
-## Resource Provisioning
-
-**NOTE**: this is described in more detail in the Score documentation: <https://docs.score.dev/docs/>.
-
-You can request the provisioning of a resource by adding it to the `resources` section of your Score file:
-
-```yaml
-# ...
-resources:
-  db:
-    type: postgres
-    # class: <an optional subtype of postgres>
-    # id: <an id that can be used between workloads to refer to the same instance of postgres database>
-    # params: {} # postgres has no params
-```
-
-When you run `score-flyio generate`, the CLI will attempt to provision each resource using one of its configured provisioners.
-
-Your app can then consume outputs from the resource in either the container variables or mounted container files sections:
-
-```yaml
-containers:
-  main:
-    # ...
-    variables:
-      DB_URL: postgres://${resources.db.user}:${resources.db.password}@${resources.db.host}:${resources.db.port}/${resources.db.name}
-```
-
-This sets the `[env]` section in the output `.toml` Fly.io configuration. If the resource marks one of the outputs as "secret", the CLI writes the secret in `KEY=VALUE` form to the `.env` file that accompanies your workload so that you can set it in Fly.io using `fly secrets import`.
-
-You can configure 3 kinds of provisioners in `score-flyio`:
-
-- `cmd` - will execute a binary with fixed args
-- `http` - will issue HTTP POST requests to a target URL
-- `static` - sets a static JSON map as the resource outputs
-
-### Configuring provisioners
-
-The CLI does not configure any provisioners by default. You can configure provisioners using the `score-flyio provisioners ..` subcommands:
-
-- `score-flyio provisioners list` - lists the configured provisioners in order
-- `score-flyio provisioners add ..` - adds a new provisioner configuration to the top of the list
-- `score-flyio provisioners remove` - removes a provisioner from the list
-
-The matching logic when provisioner a resource is simple: the CLI will iterate through the list in order and pick the first provisioner that has a resource type, class, and id that matches the subject resource.
-
-You can configure a static provisioner using `--static-json` for example:
-
-```
-score-flyio provisioners add environment default-environment --static-json='{"LOG_LEVEL":"DEBUG"}'
-```
-
-Note that static provisioners do not support secrets since this would result in the secrets being stored in the project state file which we want to avoid. Use a `cmd` provisioner instead with a more secure script file if needed.
-
-You can configure a static provisioner using `--cmd-binary` and `--cmd-args`:
-
-```
-score-flyio provisioners add postgres default-postgres --cmd-binary=python3 --cmd-args=${HOME}/bin/default-postgres-provisioner,'$SCORE_PROVISIONER_MODE'
-```
-
-This will execute the binary with the given comma separated args replacing any `$SCORE_PROVISIONER_MODE` with the provisioning mode ("provision" or "deprovision"). For example the above provisioner will end up executing `/usr/local/bin/python3 /home/my-user/bin/default-postgres-provisioner provision` with the resource state passed as input and the output decoded as resource outputs (see below). When cleaning up or destroying the resource, the CLI replaces the last argument with `"deprovision"`. The `$SCORE_PROVISIONER_MODE` environment variable will also be set in the executing context.
-
-Finally, you can configure a remote provisioner using `--http-url`. The CLI will perform an `HTTP POST` request to this URL with the resource inputs passed as the request body and will expect the response body to match the resource outputs schema (see below). The CLI will use an `HTTP DELETE` method when cleaning up or destroying a resource created by a `cmd` provisioner.
-
-#### Resource Inputs Schema
-
-```
-application/json
-{
-    "resource_type": "",
-    "resource_class": "",
-    "resource_id": "",
-    "resource_uid": "",
-    "resource_params": {},
-    "resource_metadata": {},
-    "state": {},
-    "shared": {}
-}
-```
-
-#### Resource Outputs Schema
-
-```
-application/json
-{
-    "state": {},
-    "values": {},
-    "secrets": {},
-    "shared": {}
-}
-```
-
-### Resource example: configuring the environment stage using a provisioner
-
-Your app may want to know what "stage" it is deployed into and what level to set its log output to. You can create a static environment with this content:
-
-```
-score-flyio provisioners add environment default-environment --static-json='{"STAGE":"DEV","LOG_LEVEL":"DEBUG"}'
-```
-
-And then consume it in your Score workload:
-
-```yaml
-apiVersion: score.dev/v1b1
-metadata:
-  name: sample
-containers:
-  main:
-    image: my-image
-    variables:
-      STAGE: ${resources.env.stage}
-      LOG_LEVEL: ${resources.env.LOG_LEVEL}
-resources:
-  env:
-    type: environment
-```
-
-### Resource example: pulling secrets from 1password
-
-You might also use a password manager such as 1password for storing database credentials for an environment. You could use a `cmd` provisioner to provide these at `generate` time:
-
-```
-score-flyio provisioners add postgres prod-postgres --cmd-binary=op --cmd-args=read,op://Private/prod-database-resource/outputs
-```
-
-This will pull the `outputs` field out of the `prod-database-resource` item in the `Private` vault of the local 1password which might look like:
-
-```
-{
-  "values": {
-     "host": "/cloudsql/my-project-id:region:myinstanceid",
-     "port": "",
-     "name": "dbname",
-     "user": "username"
-  },
-  "secrets": {
-     "password": "password"
-  }
-}
-```
-
-In this example, we don't need to use the `$SCORE_PROVISIONER_MODE` variable, because the state is static, but a more complex script may need to use this to determine if it is creating or destroying the resource.
-
-### Resource example: using the built-in Fly.io postgres provisioners
-
-We've included a built-in `cmd` provisioner for a [Fly.io-based Postgres](https://fly.io/docs/postgres/). This is experimental and is used to demonstrate how to use asynchronous cmd provisioners that have remote state. This comes in two variants, one for the `postgres` database type and one for the `postgres-instance` which can return a super-user.
-
-You can set this up via:
-
-```
-score-flyio provisioners add flypg postgres --cmd-binary=score-flyio --cmd-args='builtin-provisioners,postgres,$SCORE_PROVISIONER_MODE'
-score-flyio provisioners add flypginstance postgres-instance --cmd-binary=score-flyio --cmd-args='builtin-provisioners,postgres-instance,$SCORE_PROVISIONER_MODE'
-```
-
-You will also need to export a Fly API Token and preferred region as environment variables `FLY_API_TOKEN` and `FLY_REGION_NAME`.
-
-```
-export FLY_REGION_NAME=lhr
-export FLY_API_TOKEN=$(fly tokens create org -x '24h' -o personal)
-```
-
-Then you can use the `postgres` resource type:
-
-```yaml
-resources:
-    db:
-        type: postgres
-```
-
-This outputs `host`, `port`, `database`, `username`, and `password` outputs. You can connect to the following connection string from your app:
-
-```yaml
-DB: postgres://${resources.db.username}:${resources.db.password}@${resources.db.host}:${resources.db.port}/${resources.db.database}
-```
-
-The database starts as a single-node 1cpu cluster but this can be scaled vertically and horizontally using the [guide in the documentation](https://fly.io/docs/postgres/managing/).
-
-Once you have tested this, remember to deprovision the database resource through `score-flyio resources deprovision postgres.default#example.db`.
-
-You can use the following Score file as a test example:
-
-```yaml
-apiVersion: score.dev/v1b1
-metadata:
-    name: example
-    annotations:
-        score-flyio.phoenixtw.github.com/service-web-handlers: "tls,http"
-        score-flyio.phoenixtw.github.com/service-web-auto-stop: "stop"
-containers:
-    main:
-        image: ghcr.io/astromechza/demo-app:latest
-        variables:
-            OVERRIDE_POSTGRES: postgres://${resources.db.username}:${resources.db.password}@${resources.db.host}:${resources.db.port}/${resources.db.database}
-        resources:
-            requests:
-                cpu: "1"
-                memory: "128M"
-service:
-    ports:
-        web:
-            port: 443
-            targetPort: 8080
-resources:
-    db:
-        type: postgres
-```
+Apache 2.0 — see [LICENSE](LICENSE).

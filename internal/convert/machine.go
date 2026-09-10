@@ -175,12 +175,12 @@ func MachinePlanWithSecrets(currentState *state.State, workloadName string, envi
 
 		if len(container.Files) > 0 {
 			out.Files = make([]machineconfig.File, 0, len(container.Files))
-			for i, f := range container.Files {
+			for target, f := range container.Files {
 				if f.Mode != nil {
-					return nil, nil, fmt.Errorf("container[%s].files[%d]: mode not supported", containerName, i)
+					return nil, nil, fmt.Errorf("container[%s].files[%s]: mode not supported", containerName, target)
 				}
 				if f.BinaryContent != nil {
-					out.Files = append(out.Files, machineconfig.File{GuestPath: f.Target, RawContent: *f.BinaryContent})
+					out.Files = append(out.Files, machineconfig.File{GuestPath: target, RawContent: *f.BinaryContent})
 					continue
 				}
 				if f.Source != nil {
@@ -193,26 +193,26 @@ func MachinePlanWithSecrets(currentState *state.State, workloadName string, envi
 					if f.Content != nil {
 						resolved, secret, err := substituteVariable(*f.Content, sf)
 						if err != nil {
-							return nil, nil, fmt.Errorf("container[%s].files[%d]: failed to interpolate in contents: %w", containerName, i, err)
+							return nil, nil, fmt.Errorf("container[%s].files[%s]: failed to interpolate in contents: %w", containerName, target, err)
 						}
 						if secret {
-							return nil, nil, fmt.Errorf("container[%s].files[%d]: runtime secret-backed files are not supported by machine plans", containerName, i)
+							return nil, nil, fmt.Errorf("container[%s].files[%s]: runtime secret-backed files are not supported by machine plans", containerName, target)
 						}
 						f.Content = &resolved
 					} else if f.Source != nil {
 						raw, err := os.ReadFile(*f.Source)
 						if err != nil {
-							return nil, nil, fmt.Errorf("container[%s].files[%d]: failed to read file: %w", containerName, i, err)
+							return nil, nil, fmt.Errorf("container[%s].files[%s]: failed to read file: %w", containerName, target, err)
 						} else if !utf8.Valid(raw) {
-							return nil, nil, fmt.Errorf("container[%s].files[%d]: cannot perform interpolation on non utf-8 file (did you mean to set noExpand?)", containerName, i)
+							return nil, nil, fmt.Errorf("container[%s].files[%s]: cannot perform interpolation on non utf-8 file (did you mean to set noExpand?)", containerName, target)
 						}
 						stringRaw := string(raw)
 						resolved, secret, err := substituteVariable(stringRaw, sf)
 						if err != nil {
-							return nil, nil, fmt.Errorf("container[%s].files[%d]: failed to interpolate in source file: %w", containerName, i, err)
+							return nil, nil, fmt.Errorf("container[%s].files[%s]: failed to interpolate in source file: %w", containerName, target, err)
 						}
 						if secret {
-							return nil, nil, fmt.Errorf("container[%s].files[%d]: runtime secret-backed files are not supported by machine plans", containerName, i)
+							return nil, nil, fmt.Errorf("container[%s].files[%s]: runtime secret-backed files are not supported by machine plans", containerName, target)
 						}
 						if stringRaw != resolved {
 							f.Source = nil
@@ -221,31 +221,31 @@ func MachinePlanWithSecrets(currentState *state.State, workloadName string, envi
 					}
 				}
 				if f.Content != nil {
-					out.Files = append(out.Files, machineconfig.File{GuestPath: f.Target, RawContent: base64.StdEncoding.EncodeToString([]byte(*f.Content))})
+					out.Files = append(out.Files, machineconfig.File{GuestPath: target, RawContent: base64.StdEncoding.EncodeToString([]byte(*f.Content))})
 				} else if f.Source != nil {
-					return nil, nil, fmt.Errorf("container '%s'.files[%d]: local_path files are not supported for machine deployment", containerName, i)
+					return nil, nil, fmt.Errorf("container '%s'.files[%s]: local_path files are not supported for machine deployment", containerName, target)
 				} else {
-					return nil, nil, fmt.Errorf("container[%s].files[%d]: content or source must be set", containerName, i)
+					return nil, nil, fmt.Errorf("container[%s].files[%s]: content or source must be set", containerName, target)
 				}
 			}
 		}
 
 		if len(container.Volumes) > 0 {
 			out.Mounts = make([]machineconfig.Mount, 0, len(container.Volumes))
-			for i, volume := range container.Volumes {
+			for target, volume := range container.Volumes {
 				if volume.Path != nil && *volume.Path != "/" {
-					return nil, nil, fmt.Errorf("container[%s].volumes[%d]: sub-path is not supported", containerName, i)
+					return nil, nil, fmt.Errorf("container[%s].volumes[%s]: sub-path is not supported", containerName, target)
 				} else if volume.ReadOnly != nil && *volume.ReadOnly {
-					return nil, nil, fmt.Errorf("container[%s].volumes[%d]: read-only=true is not supported", containerName, i)
+					return nil, nil, fmt.Errorf("container[%s].volumes[%s]: read-only=true is not supported", containerName, target)
 				}
 				source, err := framework.SubstituteString(volume.Source, sf)
 				if err != nil {
-					return nil, nil, fmt.Errorf("container[%s].volumes[%d]: failed to interpolate source: %w", containerName, i, err)
+					return nil, nil, fmt.Errorf("container[%s].volumes[%s]: failed to interpolate source: %w", containerName, target, err)
 				}
 				if source == "" {
-					return nil, nil, fmt.Errorf("container '%s'.volumes[%d]: volume source must not be empty", containerName, i)
+					return nil, nil, fmt.Errorf("container '%s'.volumes[%s]: volume source must not be empty", containerName, target)
 				}
-				out.Mounts = append(out.Mounts, machineconfig.Mount{Volume: source, Path: volume.Target})
+				out.Mounts = append(out.Mounts, machineconfig.Mount{Volume: source, Path: target})
 				if !slices.ContainsFunc(group.Volumes, func(v machineconfig.Volume) bool { return v.Name == source }) {
 					group.Volumes = append(group.Volumes, machineconfig.Volume{Name: source})
 				}
