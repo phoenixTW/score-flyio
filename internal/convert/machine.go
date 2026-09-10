@@ -294,6 +294,15 @@ func MachinePlanWithSecrets(currentState *state.State, workloadName string, envi
 	}
 
 	groupNames := slices.Sorted(maps.Keys(groups))
+	if pm.Ingress != nil && pm.Ingress.Type == "cloudflare" && pm.Ingress.Hostname != "" {
+		if process, ok := pm.Processes["cloudflared"]; ok {
+			cloudflaredGroup := process.MachineGroup
+			if cloudflaredGroup == "" {
+				cloudflaredGroup = "cloudflared"
+			}
+			groups[cloudflaredGroup].Metadata[machineconfig.MetadataIngressHostname] = pm.Ingress.Hostname
+		}
+	}
 	plan := &machineconfig.Plan{
 		AppName:         currentState.Extras.AppPrefix + workloadName,
 		RendererVersion: rendererVersion,

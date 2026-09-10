@@ -21,7 +21,7 @@ func TestMachinePlanMapsScoreAndProgresifyFields(t *testing.T) {
 				"slack_channel":    "#platform",
 				"secret_namespace": "gateway-staging",
 				"region":           "ord",
-				"ingress":          map[string]any{"type": "cloudflare", "hostname": "gateway.example.com"},
+				"ingress":          map[string]any{"type": "cloudflare", "hostname": "gateway.flowbit.work"},
 				"variables":        map[string]string{"LOG_LEVEL": "info"},
 				"processes": map[string]any{
 					"api": map[string]any{

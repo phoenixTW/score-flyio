@@ -185,12 +185,13 @@ func happyPlan() *machineconfig.Plan {
 				},
 				Volumes: []machineconfig.Volume{{Name: "data-vol"}},
 				Metadata: map[string]string{
-					"progresify.workload":         "api",
-					"progresify.environment":      "staging",
-					"progresify.group":            "app",
-					"progresify.renderer-version": "0.1.0",
-					"progresify.owner":            "platform",
-					"progresify.secret-namespace": "ns",
+					"progresify.workload":                 "api",
+					"progresify.environment":              "staging",
+					"progresify.group":                    "app",
+					"progresify.renderer-version":         "0.1.0",
+					"progresify.owner":                    "platform",
+					"progresify.secret-namespace":         "ns",
+					machineconfig.MetadataIngressHostname: "api.flowbit.work",
 				},
 				Containers: []machineconfig.Container{
 					{

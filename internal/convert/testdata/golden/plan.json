@@ -1,0 +1,157 @@
+{
+  "app_name": "example-api",
+  "renderer_version": "0.1.0",
+  "workload": "api",
+  "environment": "staging",
+  "release_command": [
+    "bin/migrate"
+  ],
+  "groups": [
+    {
+      "name": "app",
+      "region": "ams",
+      "guest": {
+        "cpu_kind": "shared",
+        "cpus": 1,
+        "memory_mb": 512
+      },
+      "min_machines": 1,
+      "max_machines": 2,
+      "restart": "always",
+      "services": [
+        {
+          "protocol": "tcp",
+          "internal_port": 8080,
+          "ports": [
+            {
+              "port": 443,
+              "handlers": [
+                "http"
+              ]
+            }
+          ],
+          "auto_stop": "stop",
+          "auto_start": true,
+          "min_machines_running": 1,
+          "concurrency": {
+            "hard_limit": 20,
+            "soft_limit": 10
+          },
+          "checks": [
+            {
+              "method": "get",
+              "path": "/healthz",
+              "interval_seconds": 10,
+              "timeout_seconds": 5
+            }
+          ]
+        }
+      ],
+      "checks": {
+        "api-liveness_probe": {
+          "type": "http",
+          "port": 8080,
+          "method": "get",
+          "path": "/live",
+          "headers": {
+            "X-Probe": "1"
+          }
+        },
+        "api-ready": {
+          "type": "http",
+          "port": 8080,
+          "method": "get",
+          "path": "/ready",
+          "interval_seconds": 10,
+          "timeout_seconds": 5
+        }
+      },
+      "volumes": [
+        {
+          "name": "data-vol"
+        }
+      ],
+      "metadata": {
+        "flydeploy.ingress-hostname": "api.flowbit.work",
+        "progresify.environment": "staging",
+        "progresify.group": "app",
+        "progresify.owner": "platform",
+        "progresify.renderer-version": "0.1.0",
+        "progresify.secret-namespace": "ns",
+        "progresify.workload": "api"
+      },
+      "containers": [
+        {
+          "name": "api",
+          "image": "ghcr.io/progresify/api:1.2.3",
+          "command": [
+            "./api"
+          ],
+          "args": [
+            "serve"
+          ],
+          "env": {
+            "DATABASE_URL": "db.internal",
+            "LOG_LEVEL": "info"
+          },
+          "files": [
+            {
+              "guest_path": "/etc/config.yaml",
+              "raw_content": "aGVsbG8gYXBp"
+            }
+          ],
+          "mounts": [
+            {
+              "volume": "data-vol",
+              "path": "/data"
+            }
+          ],
+          "restart": "always"
+        },
+        {
+          "name": "cloudflared",
+          "image": "cloudflare/cloudflared:2024.1",
+          "args": [
+            "tunnel",
+            "run"
+          ],
+          "env": {
+            "LOG_LEVEL": "debug"
+          },
+          "restart": "always"
+        }
+      ]
+    },
+    {
+      "name": "worker",
+      "region": "ams",
+      "guest": {
+        "cpu_kind": "shared",
+        "cpus": 1,
+        "memory_mb": 256
+      },
+      "min_machines": 1,
+      "max_machines": 1,
+      "restart": "no",
+      "metadata": {
+        "progresify.environment": "staging",
+        "progresify.group": "worker",
+        "progresify.owner": "platform",
+        "progresify.renderer-version": "0.1.0",
+        "progresify.secret-namespace": "ns",
+        "progresify.workload": "api"
+      },
+      "containers": [
+        {
+          "name": "worker",
+          "image": "ghcr.io/progresify/worker:1.2.3",
+          "env": {
+            "LOG_LEVEL": "debug",
+            "QUEUE": "jobs"
+          },
+          "restart": "no"
+        }
+      ]
+    }
+  ]
+}
