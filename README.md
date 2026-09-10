@@ -24,7 +24,7 @@ adapter (`internal/progresify`, `internal/convert`) and the CLI
 
 ## Installation
 
-Download and extract the binary from the latest release on GitHub: https://github.com/astromechza/score-flyio/releases. Or build from source via `go install github.com/astromechza/score-flyio@latest`.
+Download and extract the binary from the latest release on GitHub: <https://github.com/astromechza/score-flyio/releases>. Or build from source via `go install github.com/astromechza/score-flyio@latest`.
 
 ### Workflow
 
@@ -66,7 +66,7 @@ See [./samples](./samples) for some sample Score apps that we use during testing
 
 ### Not supported 🔴
 
-- Multiple workload containers (This may improve once https://community.fly.io/t/docker-without-docker-now-with-containers/22903 is released in Fly.io)
+- Multiple workload containers (This may improve once <https://community.fly.io/t/docker-without-docker-now-with-containers/22903> is released in Fly.io)
 - Setting the mode for mounted files (not supported by Fly)
 - Setting the subpath or enabling readonly on mounted volumes (not supported by Fly)
 
