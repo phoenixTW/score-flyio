@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -34,7 +35,7 @@ import (
 	scoretypes "github.com/score-spec/score-go/types"
 
 	"github.com/phoenixTW/score-flyio/internal/appconfig"
-	"github.com/phoenixTW/score-flyio/internal/progresify"
+	"github.com/phoenixTW/score-flyio/internal/flymetadata"
 	"github.com/phoenixTW/score-flyio/internal/provisioners"
 	"github.com/phoenixTW/score-flyio/pkg/state"
 )
@@ -78,11 +79,11 @@ func Workload(currentState *state.State, workloadName string) (*appconfig.AppCon
 	if !ok {
 		return nil, nil, fmt.Errorf("workload '%s': does not exist", workloadName)
 	}
-	if _, ok := workload.Spec.Metadata[progresify.MetadataKey]; ok {
-		return nil, nil, fmt.Errorf("metadata.%s workloads require machine plan conversion", progresify.MetadataKey)
+	if _, ok := workload.Spec.Metadata[flymetadata.MetadataKey]; ok {
+		return nil, nil, fmt.Errorf("metadata.%s workloads require machine plan conversion", flymetadata.MetadataKey)
 	}
 	if len(workload.Spec.Containers) != 1 {
-		return nil, nil, fmt.Errorf("multi-container workloads require metadata.%s machine plan conversion", progresify.MetadataKey)
+		return nil, nil, fmt.Errorf("multi-container workloads require metadata.%s machine plan conversion", flymetadata.MetadataKey)
 	}
 
 	resOutputs, err := currentState.GetResourceOutputForWorkload(workloadName)
@@ -138,7 +139,8 @@ func Workload(currentState *state.State, workloadName string) (*appconfig.AppCon
 
 	if len(container.Variables) > 0 {
 		output.Env = make(map[string]string, len(container.Variables))
-		for key, value := range container.Variables {
+		for _, key := range slices.Sorted(maps.Keys(container.Variables)) {
+			value := container.Variables[key]
 			sf2, sa := provisioners.BuildSubstitutionFuncWithSecretWatch(sf)
 			out, err := framework.SubstituteString(value, sf2)
 			if err != nil {
@@ -154,7 +156,8 @@ func Workload(currentState *state.State, workloadName string) (*appconfig.AppCon
 	}
 	if len(container.Files) > 0 {
 		output.Files = make([]appconfig.File, 0, len(container.Files))
-		for target, f := range container.Files {
+		for _, target := range slices.Sorted(maps.Keys(container.Files)) {
+			f := container.Files[target]
 			if f.Mode != nil {
 				return nil, nil, fmt.Errorf("container[%s].files[%s]: mode not supported", containerName, target)
 			}
@@ -215,7 +218,8 @@ func Workload(currentState *state.State, workloadName string) (*appconfig.AppCon
 
 	if len(container.Volumes) > 0 {
 		output.Mounts = make([]appconfig.Mount, 0, len(container.Volumes))
-		for target, volume := range container.Volumes {
+		for _, target := range slices.Sorted(maps.Keys(container.Volumes)) {
+			volume := container.Volumes[target]
 			if volume.Path != nil && *volume.Path != "/" {
 				return nil, nil, fmt.Errorf("container[%s].volumes[%s]: sub-path is not supported", containerName, target)
 			} else if volume.ReadOnly != nil && *volume.ReadOnly {
@@ -231,7 +235,8 @@ func Workload(currentState *state.State, workloadName string) (*appconfig.AppCon
 
 	output.Services = make([]appconfig.Service, 0)
 	if workload.Spec.Service != nil {
-		for name, def := range workload.Spec.Service.Ports {
+		for _, name := range slices.Sorted(maps.Keys(workload.Spec.Service.Ports)) {
+			def := workload.Spec.Service.Ports[name]
 			svc := appconfig.Service{
 				InternalPort: def.Port,
 				Protocol:     "tcp",

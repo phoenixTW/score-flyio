@@ -1,9 +1,8 @@
 # Score-to-Fly Machines contract
 
-This is the frozen deployment contract consumed by the custom `score-flyio`
-renderer. The upstream `platform-score-apps` repository is not present in this
-workspace, so this copy is kept beside the renderer until that repository can
-carry the canonical document.
+This is the generic deployment contract consumed by `score-flyio`. Application
+repositories may translate their own workload configuration into this contract;
+the renderer does not contain application-specific topology or policy.
 
 ## Workload and machine groups
 
@@ -16,13 +15,6 @@ carry the canonical document.
 - Public ingress is opt-in. Private services do not receive a Fly public
   service.
 - Images resolve to immutable digests before `plan` or `apply`.
-
-The Angada topology is:
-
-- API group: `app`, `worker`, `cloudflared`.
-- Wiki group: `app`, `worker`.
-- Review group: the defined review worker topology.
-- LiteLLM and Hatchet: separate private apps.
 
 ## Planner contract
 

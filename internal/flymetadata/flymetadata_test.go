@@ -1,6 +1,7 @@
-package progresify
+package flymetadata
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,13 +10,13 @@ import (
 func happyMetadata() *Metadata {
 	return &Metadata{
 		Owner:           "team-a",
-		SlackChannel:    "#flowbit",
-		SecretNamespace: "flowbit-staging",
+		SlackChannel:    "#example",
+		SecretNamespace: "example-staging",
 		Region:          "iad",
 		Ingress: &Ingress{
-			Type:     "cloudflare",
-			Hostname: "api.flowbit.work",
-			Tunnel:   "flowbit-staging",
+			Type:     "public",
+			Hostname: "api.example.test",
+			Tunnel:   "example-staging",
 		},
 		ReleaseCommand: []string{"bin/migrate"},
 		Variables:      map[string]string{"LOG_LEVEL": "debug"},
@@ -36,7 +37,7 @@ func happyMetadata() *Metadata {
 				Vm:    &Vm{Cpus: 1, MemoryMb: 256},
 				Scale: &Scale{Min: 0, Max: 2},
 			},
-			"cloudflared": {
+			"sidecar": {
 				MachineGroup: "app",
 				Vm:           &Vm{Cpus: 1, MemoryMb: 512},
 				Scale:        &Scale{Min: 1, Max: 2},
@@ -46,7 +47,7 @@ func happyMetadata() *Metadata {
 }
 
 func happyContainers() []string {
-	return []string{"app", "worker", "cloudflared"}
+	return []string{"app", "worker", "sidecar"}
 }
 
 func mutateProcess(m *Metadata, name string, mutate func(p *Process)) {
@@ -100,13 +101,13 @@ func TestParseWrongType(t *testing.T) {
 func TestParseFullMetadata(t *testing.T) {
 	raw := map[string]any{
 		"owner":            "team-a",
-		"slack_channel":    "#flowbit",
-		"secret_namespace": "flowbit-staging",
+		"slack_channel":    "#example",
+		"secret_namespace": "example-staging",
 		"region":           "iad",
 		"ingress": map[string]any{
-			"type":     "cloudflare",
-			"hostname": "api.flowbit.work",
-			"tunnel":   "flowbit-staging",
+			"type":     "public",
+			"hostname": "api.example.test",
+			"tunnel":   "example-staging",
 		},
 		"release_command": []string{"bin/migrate"},
 		"variables":       map[string]any{"LOG_LEVEL": "debug"},
@@ -133,7 +134,7 @@ func TestParseFullMetadata(t *testing.T) {
 				},
 			},
 			"worker": map[string]any{},
-			"cloudflared": map[string]any{
+			"sidecar": map[string]any{
 				"machine_group": "app",
 				"vm":            map[string]any{"cpus": 1, "memory_mb": 512},
 				"scale":         map[string]any{"min": 1, "max": 2},
@@ -146,13 +147,13 @@ func TestParseFullMetadata(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, &Metadata{
 		Owner:           "team-a",
-		SlackChannel:    "#flowbit",
-		SecretNamespace: "flowbit-staging",
+		SlackChannel:    "#example",
+		SecretNamespace: "example-staging",
 		Region:          "iad",
 		Ingress: &Ingress{
-			Type:     "cloudflare",
-			Hostname: "api.flowbit.work",
-			Tunnel:   "flowbit-staging",
+			Type:     "public",
+			Hostname: "api.example.test",
+			Tunnel:   "example-staging",
 		},
 		ReleaseCommand: []string{"bin/migrate"},
 		Variables:      map[string]string{"LOG_LEVEL": "debug"},
@@ -171,7 +172,7 @@ func TestParseFullMetadata(t *testing.T) {
 				},
 			},
 			"worker": {},
-			"cloudflared": {
+			"sidecar": {
 				MachineGroup: "app",
 				Vm:           &Vm{Cpus: 1, MemoryMb: 512},
 				Scale:        &Scale{Min: 1, Max: 2},
@@ -220,8 +221,8 @@ func TestValidateErrors(t *testing.T) {
 		{
 			name:       "container without process",
 			mutate:     func(m *Metadata) {},
-			containers: []string{"app", "worker", "cloudflared", "sidecar"},
-			expected:   "container 'sidecar' has no configuration in metadata.progresify.processes",
+			containers: []string{"app", "worker", "sidecar", "extra"},
+			expected:   "container 'extra' has no configuration in metadata.fly.processes",
 		},
 		{
 			name: "invalid process name",
@@ -235,36 +236,36 @@ func TestValidateErrors(t *testing.T) {
 			name: "colocated processes with different restart",
 			mutate: func(m *Metadata) {
 				mutateProcess(m, "app", func(p *Process) { p.Restart = "always" })
-				mutateProcess(m, "cloudflared", func(p *Process) { p.Restart = "no" })
+				mutateProcess(m, "sidecar", func(p *Process) { p.Restart = "no" })
 			},
-			expected: "machine group 'app': process 'cloudflared' must share vm, scale, and restart with process 'app'",
+			expected: "machine group 'app': process 'sidecar' must share vm, scale, and restart with process 'app'",
 		},
 		{
 			name: "colocated processes with different vm",
 			mutate: func(m *Metadata) {
-				p := m.Processes["cloudflared"]
+				p := m.Processes["sidecar"]
 				p.Vm = &Vm{Cpus: 1, MemoryMb: 1024}
-				m.Processes["cloudflared"] = p
+				m.Processes["sidecar"] = p
 			},
-			expected: "machine group 'app': process 'cloudflared' must share vm, scale, and restart with process 'app'",
+			expected: "machine group 'app': process 'sidecar' must share vm, scale, and restart with process 'app'",
 		},
 		{
 			name: "colocated processes with nil vm",
 			mutate: func(m *Metadata) {
-				p := m.Processes["cloudflared"]
+				p := m.Processes["sidecar"]
 				p.Vm = nil
-				m.Processes["cloudflared"] = p
+				m.Processes["sidecar"] = p
 			},
-			expected: "machine group 'app': process 'cloudflared' must share vm, scale, and restart with process 'app'",
+			expected: "machine group 'app': process 'sidecar' must share vm, scale, and restart with process 'app'",
 		},
 		{
 			name: "colocated processes with different scale",
 			mutate: func(m *Metadata) {
-				p := m.Processes["cloudflared"]
+				p := m.Processes["sidecar"]
 				p.Scale = &Scale{Min: 1, Max: 4}
-				m.Processes["cloudflared"] = p
+				m.Processes["sidecar"] = p
 			},
-			expected: "machine group 'app': process 'cloudflared' must share vm, scale, and restart with process 'app'",
+			expected: "machine group 'app': process 'sidecar' must share vm, scale, and restart with process 'app'",
 		},
 		{
 			name: "concurrency with unsupported key",
@@ -275,18 +276,8 @@ func TestValidateErrors(t *testing.T) {
 		},
 		{
 			name:     "ingress with invalid type",
-			mutate:   func(m *Metadata) { m.Ingress.Type = "public" },
+			mutate:   func(m *Metadata) { m.Ingress.Type = "edge" },
 			expected: "ingress.type: must be one of",
-		},
-		{
-			name:     "cloudflare ingress without hostname",
-			mutate:   func(m *Metadata) { m.Ingress.Hostname = "" },
-			expected: "ingress.type=cloudflare requires a hostname",
-		},
-		{
-			name:     "cloudflare hostname outside flowbit.work",
-			mutate:   func(m *Metadata) { m.Ingress.Hostname = "api.example.com" },
-			expected: "ingress.hostname: cloudflare hostnames must be under .flowbit.work",
 		},
 		{
 			name:     "private ingress with hostname",
@@ -423,4 +414,43 @@ func TestValidateErrors(t *testing.T) {
 			assert.Contains(t, err.Error(), c.expected)
 		})
 	}
+}
+
+func TestParsePublishedFlyMetadataShape(t *testing.T) {
+	raw := map[string]any{
+		"owner": "team", "slack": "#team",
+		"secrets":       map[string]any{"provider": "vault", "coords": map[string]any{"environment": "stage"}},
+		"primaryRegion": "fra", "ingress": "public", "releaseCommand": "/app migrate up",
+		"variables": map[string]any{"ENVIRONMENT": "stage"},
+		"processes": map[string]any{
+			"service": map[string]any{
+				"profile": "service", "command": "/app serve", "image": "registry.example/app@sha256:" + strings.Repeat("a", 64),
+				"vm": map[string]any{"size": "shared-cpu-2x", "memory": "512mb"}, "scale": map[string]any{"min": 1, "max": 2},
+				"httpService": map[string]any{
+					"internalPort": 8080, "autoStopMachines": true, "autoStartMachines": true, "minMachinesRunning": 1,
+					"checks": map[string]any{"ready": map[string]any{"path": "/ready", "method": "GET", "interval": "10s", "timeout": "2s", "gracePeriod": "5s"}},
+				},
+			},
+			"worker": map[string]any{
+				"profile": "worker", "command": "/app worker", "vm": map[string]any{"size": "shared-cpu-1x", "memory": "256mb"}, "scale": map[string]any{"min": 0, "max": 1},
+			},
+		},
+	}
+
+	metadata, err := Parse(raw)
+
+	if !assert.NoError(t, err) || !assert.NotNil(t, metadata) {
+		return
+	}
+	assert.Equal(t, "#team", metadata.SlackChannel)
+	assert.Equal(t, "vault:stage", metadata.SecretNamespace)
+	assert.Equal(t, "fra", metadata.Region)
+	assert.Equal(t, "public", metadata.Ingress.Type)
+	assert.Equal(t, []string{"/app", "migrate", "up"}, metadata.ReleaseCommand)
+	service := metadata.Processes["service"]
+	assert.Equal(t, []string{"/app", "serve"}, service.Command)
+	assert.Equal(t, 2, service.Vm.Cpus)
+	assert.Equal(t, 512, service.Vm.MemoryMb)
+	assert.Equal(t, "stop", service.HttpService.AutoStop)
+	assert.Equal(t, "/ready", service.HttpService.Checks["ready"].Path)
 }

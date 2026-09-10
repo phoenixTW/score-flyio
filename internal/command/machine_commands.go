@@ -8,13 +8,11 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"net/http"
 	"os"
 	"os/exec"
 	"slices"
 	"sort"
 	"strings"
-	"time"
 
 	scoreloader "github.com/score-spec/score-go/loader"
 	scoreschema "github.com/score-spec/score-go/schema"
@@ -145,7 +143,7 @@ func loadMachineInput(cmd *cobra.Command, workloadFile string, options machineCo
 		return nil, err
 	}
 	if plan == nil {
-		return nil, fmt.Errorf("workload %q has no metadata.progresify machine plan", workloadName)
+		return nil, fmt.Errorf("workload %q has no metadata.fly machine plan", workloadName)
 	}
 	for i := range plan.Groups {
 		if override, ok := sd.State.Workloads[workloadName].Extras.ScaleOverrides[plan.Groups[i].Name]; ok {
@@ -226,7 +224,6 @@ func applyMachinePlanLive(cmd *cobra.Command, input *machineInput) error {
 			return err
 		}
 	}
-	runTunnelHealthCheck(cmd, input.plan)
 	return writeMachineJSON(cmd, outputFor(input, result.Changes))
 }
 
@@ -552,42 +549,6 @@ func setMachineSecrets(cmd *cobra.Command, token, app string, secrets map[string
 		return fmt.Errorf("failed to set machine secrets: %w", err)
 	}
 	return nil
-}
-
-var tunnelHealthCheckURL = func(hostname string) (string, bool) {
-	return "https://" + hostname, true
-}
-
-func runTunnelHealthCheck(cmd *cobra.Command, plan *machineconfig.Plan) {
-	if plan.Environment != "staging" {
-		return
-	}
-	for i := range plan.Groups {
-		group := plan.Groups[i]
-		if !slices.ContainsFunc(group.Containers, func(c machineconfig.Container) bool { return c.Name == "cloudflared" }) {
-			continue
-		}
-		hostname := group.Metadata[machineconfig.MetadataIngressHostname]
-		if hostname == "" {
-			continue
-		}
-		checkTunnelHost(cmd, hostname)
-		return
-	}
-}
-
-func checkTunnelHost(cmd *cobra.Command, hostname string) {
-	url, enabled := tunnelHealthCheckURL(hostname)
-	if !enabled {
-		return
-	}
-	client := &http.Client{Timeout: 10 * time.Second}
-	response, err := client.Get(url)
-	if err != nil {
-		cmd.PrintErrln(fmt.Sprintf("warning: tunnel health check failed for %s: %v", hostname, err))
-		return
-	}
-	_ = response.Body.Close()
 }
 
 func runMachineReconcile(cmd *cobra.Command, args []string) error {

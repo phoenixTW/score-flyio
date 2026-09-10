@@ -354,7 +354,7 @@ func writeMachineCommandFixture(t *testing.T, digest string) string {
 	content := fmt.Sprintf(`apiVersion: score.dev/v1b1
 metadata:
   name: gateway
-  progresify:
+  fly:
     processes:
       api: {}
 containers:
@@ -391,75 +391,4 @@ func TestSetMachineSecretsPipesSecretsViaStdin(t *testing.T) {
 	assert.NotContains(t, capturedArgs, "hunter2")
 	assert.NotContains(t, capturedArgs, "s3cret")
 	assert.Equal(t, "A_PASSWORD=s3cret\nB_PASSWORD=hunter2\n", capturedStdin)
-}
-
-func tunnelHealthPlan(environment string) *machineconfig.Plan {
-	return &machineconfig.Plan{
-		Environment: environment,
-		Groups: []machineconfig.Group{{
-			Name:       "app",
-			Containers: []machineconfig.Container{{Name: "cloudflared"}},
-			Metadata:   map[string]string{machineconfig.MetadataIngressHostname: "api.flowbit.work"},
-		}},
-	}
-}
-
-func TestRunTunnelHealthCheckSucceedsSilentlyWhenHostAnswers(t *testing.T) {
-	requests := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests++ }))
-	t.Cleanup(server.Close)
-	tunnelHealthCheckURL = func(hostname string) (string, bool) { return server.URL + "/" + hostname, true }
-	t.Cleanup(func() {
-		tunnelHealthCheckURL = func(hostname string) (string, bool) { return "https://" + hostname, true }
-	})
-
-	cmd := &cobra.Command{}
-	stdErr := &strings.Builder{}
-	cmd.SetErr(stdErr)
-
-	runTunnelHealthCheck(cmd, tunnelHealthPlan("staging"))
-
-	assert.Equal(t, 1, requests)
-	assert.Empty(t, stdErr.String())
-}
-
-func TestRunTunnelHealthCheckWarnsWhenHostIsUnreachable(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	server.Close()
-	tunnelHealthCheckURL = func(hostname string) (string, bool) { return server.URL, true }
-	t.Cleanup(func() {
-		tunnelHealthCheckURL = func(hostname string) (string, bool) { return "https://" + hostname, true }
-	})
-
-	cmd := &cobra.Command{}
-	stdErr := &strings.Builder{}
-	cmd.SetErr(stdErr)
-
-	runTunnelHealthCheck(cmd, tunnelHealthPlan("staging"))
-
-	assert.Contains(t, stdErr.String(), "warning: tunnel health check failed")
-}
-
-func TestRunTunnelHealthCheckSkipsNonStagingAndMissingHostname(t *testing.T) {
-	requests := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests++ }))
-	t.Cleanup(server.Close)
-	tunnelHealthCheckURL = func(hostname string) (string, bool) { return server.URL, true }
-	t.Cleanup(func() {
-		tunnelHealthCheckURL = func(hostname string) (string, bool) { return "https://" + hostname, true }
-	})
-
-	cmd := &cobra.Command{}
-	cmd.SetErr(io.Discard)
-
-	runTunnelHealthCheck(cmd, tunnelHealthPlan("production"))
-
-	assert.Equal(t, 0, requests)
-
-	noHostname := tunnelHealthPlan("staging")
-	noHostname.Groups[0].Metadata = map[string]string{}
-
-	runTunnelHealthCheck(cmd, noHostname)
-
-	assert.Equal(t, 0, requests)
 }

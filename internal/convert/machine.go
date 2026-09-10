@@ -14,14 +14,14 @@ import (
 	"github.com/score-spec/score-go/framework"
 	scoretypes "github.com/score-spec/score-go/types"
 
-	"github.com/phoenixTW/score-flyio/internal/progresify"
+	"github.com/phoenixTW/score-flyio/internal/flymetadata"
 	"github.com/phoenixTW/score-flyio/internal/provisioners"
 	"github.com/phoenixTW/score-flyio/pkg/flydeploy/machineconfig"
 	"github.com/phoenixTW/score-flyio/pkg/flydeploy/planner"
 	"github.com/phoenixTW/score-flyio/pkg/state"
 )
 
-const metadataKeyPrefix = "progresify."
+const metadataKeyPrefix = "fly."
 
 // MachinePlan converts the workload using default plan metadata. Secret values
 // are returned only by MachinePlanWithSecrets, never as part of the plan.
@@ -38,13 +38,13 @@ func MachinePlanWithSecrets(currentState *state.State, workloadName string, envi
 	if !ok {
 		return nil, nil, fmt.Errorf("workload '%s': does not exist", workloadName)
 	}
-	rawMetaValue, hasMeta := workload.Spec.Metadata[progresify.MetadataKey]
+	rawMetaValue, hasMeta := workload.Spec.Metadata[flymetadata.MetadataKey]
 	if !hasMeta {
 		return nil, nil, nil
 	}
 	rawMeta, ok := rawMetaValue.(map[string]any)
 	if !ok {
-		return nil, nil, fmt.Errorf("metadata.%s: must be an object", progresify.MetadataKey)
+		return nil, nil, fmt.Errorf("metadata.%s: must be an object", flymetadata.MetadataKey)
 	}
 
 	resOutputs, err := currentState.GetResourceOutputForWorkload(workloadName)
@@ -52,20 +52,17 @@ func MachinePlanWithSecrets(currentState *state.State, workloadName string, envi
 		return nil, nil, fmt.Errorf("failed to generate outputs: %w", err)
 	}
 	sf := framework.BuildSubstitutionFunction(workload.Spec.Metadata, resOutputs)
-	pm, err := progresify.Parse(rawMeta)
+	pm, err := flymetadata.Parse(rawMeta)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to parse metadata.%s: %w", progresify.MetadataKey, err)
+		return nil, nil, fmt.Errorf("failed to parse metadata.%s: %w", flymetadata.MetadataKey, err)
 	}
 	if pm == nil {
-		return nil, nil, fmt.Errorf("workload '%s' requires metadata.%s for machine deployment", workloadName, progresify.MetadataKey)
-	}
-	if pm.Ingress != nil && pm.Ingress.Type == "cloudflare" && environment != "staging" {
-		return nil, nil, fmt.Errorf("metadata.%s.ingress: cloudflare ingress is restricted to staging", progresify.MetadataKey)
+		return nil, nil, fmt.Errorf("workload '%s' requires metadata.%s for machine deployment", workloadName, flymetadata.MetadataKey)
 	}
 
 	containerNames := slices.Sorted(maps.Keys(workload.Spec.Containers))
-	if err := progresify.Validate(pm, containerNames); err != nil {
-		return nil, nil, fmt.Errorf("invalid metadata.%s: %w", progresify.MetadataKey, err)
+	if err := flymetadata.Validate(pm, containerNames); err != nil {
+		return nil, nil, fmt.Errorf("invalid metadata.%s: %w", flymetadata.MetadataKey, err)
 	}
 
 	outputSecrets := make(map[string]string)
@@ -86,7 +83,7 @@ func MachinePlanWithSecrets(currentState *state.State, workloadName string, envi
 		}
 		group := &machineconfig.Group{
 			Name:        groupName,
-			Region:      progresify.DefaultRegion,
+			Region:      flymetadata.DefaultRegion,
 			Guest:       &machineconfig.Guest{CpuKind: "shared", Cpus: 1, MemoryMb: 256},
 			MinMachines: 1,
 			MaxMachines: 1,
@@ -115,8 +112,8 @@ func MachinePlanWithSecrets(currentState *state.State, workloadName string, envi
 		}
 		group := groups[groupName]
 		if p.HttpService != nil {
-			if len(p.HttpService.Ports) > 0 && (pm.Ingress == nil || pm.Ingress.Type != "cloudflare") {
-				return nil, nil, fmt.Errorf("process '%s': public http_service requires cloudflare ingress", containerName)
+			if len(p.HttpService.Ports) > 0 && (pm.Ingress == nil || pm.Ingress.Type != "public") {
+				return nil, nil, fmt.Errorf("process '%s': public http_service requires public ingress", containerName)
 			}
 			group.Services = append(group.Services, serviceFromHttpService(p.HttpService, p.Concurrency))
 		}
@@ -125,35 +122,62 @@ func MachinePlanWithSecrets(currentState *state.State, workloadName string, envi
 				group.Checks = make(map[string]machineconfig.Check)
 			}
 			for checkName, check := range p.Checks {
-				group.Checks[containerName+"-"+checkName] = checkFromProgresify(check)
+				group.Checks[containerName+"-"+checkName] = checkFromMetadata(check)
 			}
 		}
 
-		if container.Image == "." {
+		image := container.Image
+		if p.Image != "" {
+			image, err = framework.SubstituteString(p.Image, sf)
+			if err != nil {
+				return nil, nil, fmt.Errorf("process[%s].image: failed to interpolate: %w", containerName, err)
+			}
+		}
+		if image == "." {
 			return nil, nil, fmt.Errorf("container '%s': machine deployment requires a prebuilt image (image == '.' is not supported)", containerName)
 		}
 		restart := p.Restart
 		if restart == "" {
 			restart = machineconfig.RestartPolicyAlways
 		}
-		out := machineconfig.Container{Name: containerName, Image: container.Image, Restart: restart}
-		if at := strings.LastIndex(container.Image, "@"); at >= 0 && at+1 < len(container.Image) {
-			out.ImageDigest = container.Image[at+1:]
+		out := machineconfig.Container{Name: containerName, Image: image, Restart: restart}
+		if at := strings.LastIndex(image, "@"); at >= 0 && at+1 < len(image) {
+			out.ImageDigest = image[at+1:]
 		}
-		if len(container.Command) > 0 {
-			out.Command = append([]string(nil), container.Command...)
+		command := container.Command
+		if len(p.Command) > 0 {
+			command = p.Command
 		}
-		if len(container.Args) > 0 {
-			out.Args = append([]string(nil), container.Args...)
+		if len(command) > 0 {
+			out.Command = append([]string(nil), command...)
+		}
+		args := container.Args
+		if len(p.Args) > 0 {
+			args = p.Args
+		}
+		if len(args) > 0 {
+			out.Args = append([]string(nil), args...)
 		}
 
 		out.Env = make(map[string]string)
 		for _, key := range slices.Sorted(maps.Keys(pm.Variables)) {
 			resolved, secret, err := substituteVariable(pm.Variables[key], sf)
 			if err != nil {
-				return nil, nil, fmt.Errorf("metadata.%s.variables: %s: %w", progresify.MetadataKey, key, err)
+				return nil, nil, fmt.Errorf("metadata.%s.variables: %s: %w", flymetadata.MetadataKey, key, err)
 			}
 			if secret {
+				outputSecrets[key] = resolved
+			} else {
+				out.Env[key] = resolved
+			}
+		}
+		for _, key := range slices.Sorted(maps.Keys(p.Variables)) {
+			resolved, secret, err := substituteVariable(p.Variables[key], sf)
+			if err != nil {
+				return nil, nil, fmt.Errorf("metadata.%s.processes.%s.variables: %s: %w", flymetadata.MetadataKey, containerName, key, err)
+			}
+			if secret {
+				delete(out.Env, key)
 				outputSecrets[key] = resolved
 			} else {
 				out.Env[key] = resolved
@@ -295,15 +319,6 @@ func MachinePlanWithSecrets(currentState *state.State, workloadName string, envi
 	}
 
 	groupNames := slices.Sorted(maps.Keys(groups))
-	if pm.Ingress != nil && pm.Ingress.Type == "cloudflare" && pm.Ingress.Hostname != "" {
-		if process, ok := pm.Processes["cloudflared"]; ok {
-			cloudflaredGroup := process.MachineGroup
-			if cloudflaredGroup == "" {
-				cloudflaredGroup = "cloudflared"
-			}
-			groups[cloudflaredGroup].Metadata[machineconfig.MetadataIngressHostname] = pm.Ingress.Hostname
-		}
-	}
 	plan := &machineconfig.Plan{
 		AppName:         currentState.Extras.AppPrefix + workloadName,
 		RendererVersion: rendererVersion,
@@ -334,7 +349,7 @@ func substituteVariable(value string, sf func(string) (string, error)) (string, 
 	return out, *sa, nil
 }
 
-func groupMetadata(workloadName string, environment string, rendererVersion string, groupName string, pm *progresify.Metadata) map[string]string {
+func groupMetadata(workloadName string, environment string, rendererVersion string, groupName string, pm *flymetadata.Metadata) map[string]string {
 	out := map[string]string{
 		metadataKeyPrefix + "workload":         workloadName,
 		metadataKeyPrefix + "environment":      environment,
@@ -351,7 +366,7 @@ func groupMetadata(workloadName string, environment string, rendererVersion stri
 	return out
 }
 
-func serviceFromHttpService(hs *progresify.HttpService, concurrency map[string]any) machineconfig.Service {
+func serviceFromHttpService(hs *flymetadata.HttpService, concurrency map[string]any) machineconfig.Service {
 	svc := machineconfig.Service{
 		Protocol:           "tcp",
 		InternalPort:       hs.InternalPort,
@@ -369,10 +384,26 @@ func serviceFromHttpService(hs *progresify.HttpService, concurrency map[string]a
 			svc.Ports = append(svc.Ports, machineconfig.ServicePort{Port: p.Port, Handlers: append([]string(nil), p.Handlers...)})
 		}
 	}
+	for _, name := range slices.Sorted(maps.Keys(hs.Checks)) {
+		check := hs.Checks[name]
+		if check.Type != "http" {
+			continue
+		}
+		serviceCheck := machineconfig.ServiceHttpCheck{
+			Method:             check.Method,
+			Path:               check.Path,
+			Headers:            maps.Clone(check.Headers),
+			IntervalSeconds:    check.IntervalSeconds,
+			TimeoutSeconds:     check.TimeoutSeconds,
+			GracePeriodSeconds: check.GracePeriodSeconds,
+			Protocol:           hs.Protocol,
+		}
+		svc.Checks = append(svc.Checks, serviceCheck)
+	}
 	return svc
 }
 
-func checkFromProgresify(c progresify.Check) machineconfig.Check {
+func checkFromMetadata(c flymetadata.Check) machineconfig.Check {
 	return machineconfig.Check{
 		Type:               c.Type,
 		Port:               c.Port,

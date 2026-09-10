@@ -72,18 +72,17 @@
         }
       ],
       "metadata": {
-        "flydeploy.group": "app",
-        "flydeploy.ingress-hostname": "api.flowbit.work",
-        "progresify.environment": "staging",
-        "progresify.owner": "platform",
-        "progresify.renderer-version": "0.1.0",
-        "progresify.secret-namespace": "ns",
-        "progresify.workload": "api"
+        "fly.environment": "staging",
+        "fly.owner": "platform",
+        "fly.renderer-version": "0.1.0",
+        "fly.secret-namespace": "ns",
+        "fly.workload": "api",
+        "flydeploy.group": "app"
       },
       "containers": [
         {
           "name": "api",
-          "image": "ghcr.io/progresify/api:1.2.3",
+          "image": "registry.example/api:1.2.3",
           "command": [
             "./api"
           ],
@@ -109,8 +108,8 @@
           "restart": "always"
         },
         {
-          "name": "cloudflared",
-          "image": "cloudflare/cloudflared:2024.1",
+          "name": "sidecar",
+          "image": "registry.example/sidecar:1",
           "args": [
             "tunnel",
             "run"
@@ -134,17 +133,17 @@
       "max_machines": 1,
       "restart": "no",
       "metadata": {
-        "flydeploy.group": "worker",
-        "progresify.environment": "staging",
-        "progresify.owner": "platform",
-        "progresify.renderer-version": "0.1.0",
-        "progresify.secret-namespace": "ns",
-        "progresify.workload": "api"
+        "fly.environment": "staging",
+        "fly.owner": "platform",
+        "fly.renderer-version": "0.1.0",
+        "fly.secret-namespace": "ns",
+        "fly.workload": "api",
+        "flydeploy.group": "worker"
       },
       "containers": [
         {
           "name": "worker",
-          "image": "ghcr.io/progresify/worker:1.2.3",
+          "image": "registry.example/worker:1.2.3",
           "env": {
             "LOG_LEVEL": "debug",
             "QUEUE": "jobs"

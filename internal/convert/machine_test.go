@@ -15,12 +15,12 @@ import (
 )
 
 func happyWorkloadSpec() scoretypes.Workload {
-	progresifyMeta := map[string]any{
+	flyMeta := map[string]any{
 		"owner":            "platform",
 		"release_command":  []string{"bin/migrate"},
 		"secret_namespace": "ns",
 		"region":           "ams",
-		"ingress":          map[string]any{"type": "cloudflare", "hostname": "api.flowbit.work"},
+		"ingress":          map[string]any{"type": "public", "hostname": "api.example.test"},
 		"variables": map[string]string{
 			"LOG_LEVEL": "debug",
 		},
@@ -48,7 +48,7 @@ func happyWorkloadSpec() scoretypes.Workload {
 					},
 				},
 			},
-			"cloudflared": map[string]any{
+			"sidecar": map[string]any{
 				"machine_group": "app",
 				"vm":            map[string]any{"cpus": 1, "memory_mb": 512},
 				"scale":         map[string]any{"min": 1, "max": 2},
@@ -61,12 +61,12 @@ func happyWorkloadSpec() scoretypes.Workload {
 	}
 	return scoretypes.Workload{
 		Metadata: scoretypes.WorkloadMetadata{
-			"name":       "api",
-			"progresify": progresifyMeta,
+			"name": "api",
+			"fly":  flyMeta,
 		},
 		Containers: map[string]scoretypes.Container{
 			"api": {
-				Image:   "ghcr.io/progresify/api:1.2.3",
+				Image:   "registry.example/api:1.2.3",
 				Command: []string{"./api"},
 				Args:    []string{"serve"},
 				Variables: map[string]string{
@@ -93,12 +93,12 @@ func happyWorkloadSpec() scoretypes.Workload {
 					HttpGet: &scoretypes.HttpProbe{Path: "/healthz", Port: 8080},
 				},
 			},
-			"cloudflared": {
-				Image: "cloudflare/cloudflared:2024.1",
+			"sidecar": {
+				Image: "registry.example/sidecar:1",
 				Args:  []string{"tunnel", "run"},
 			},
 			"worker": {
-				Image: "ghcr.io/progresify/worker:1.2.3",
+				Image: "registry.example/worker:1.2.3",
 				Variables: map[string]string{
 					"QUEUE": "${resources.queue.name}",
 				},
@@ -185,18 +185,17 @@ func happyPlan() *machineconfig.Plan {
 				},
 				Volumes: []machineconfig.Volume{{Name: "data-vol"}},
 				Metadata: map[string]string{
-					"progresify.workload":                 "api",
-					"progresify.environment":              "staging",
-					"flydeploy.group":                     "app",
-					"progresify.renderer-version":         "0.1.0",
-					"progresify.owner":                    "platform",
-					"progresify.secret-namespace":         "ns",
-					machineconfig.MetadataIngressHostname: "api.flowbit.work",
+					"fly.workload":         "api",
+					"fly.environment":      "staging",
+					"flydeploy.group":      "app",
+					"fly.renderer-version": "0.1.0",
+					"fly.owner":            "platform",
+					"fly.secret-namespace": "ns",
 				},
 				Containers: []machineconfig.Container{
 					{
 						Name:    "api",
-						Image:   "ghcr.io/progresify/api:1.2.3",
+						Image:   "registry.example/api:1.2.3",
 						Command: []string{"./api"},
 						Args:    []string{"serve"},
 						Restart: "always",
@@ -210,8 +209,8 @@ func happyPlan() *machineconfig.Plan {
 						Mounts: []machineconfig.Mount{{Volume: "data-vol", Path: "/data"}},
 					},
 					{
-						Name:    "cloudflared",
-						Image:   "cloudflare/cloudflared:2024.1",
+						Name:    "sidecar",
+						Image:   "registry.example/sidecar:1",
 						Args:    []string{"tunnel", "run"},
 						Restart: "always",
 						Env:     map[string]string{"LOG_LEVEL": "debug"},
@@ -226,17 +225,17 @@ func happyPlan() *machineconfig.Plan {
 				MaxMachines: 1,
 				Restart:     "no",
 				Metadata: map[string]string{
-					"progresify.workload":         "api",
-					"progresify.environment":      "staging",
-					"flydeploy.group":             "worker",
-					"progresify.renderer-version": "0.1.0",
-					"progresify.owner":            "platform",
-					"progresify.secret-namespace": "ns",
+					"fly.workload":         "api",
+					"fly.environment":      "staging",
+					"flydeploy.group":      "worker",
+					"fly.renderer-version": "0.1.0",
+					"fly.owner":            "platform",
+					"fly.secret-namespace": "ns",
 				},
 				Containers: []machineconfig.Container{
 					{
 						Name:    "worker",
-						Image:   "ghcr.io/progresify/worker:1.2.3",
+						Image:   "registry.example/worker:1.2.3",
 						Restart: "no",
 						Env: map[string]string{
 							"LOG_LEVEL": "debug",
@@ -279,7 +278,7 @@ func TestMachinePlanWithSecretsIsDeterministic(t *testing.T) {
 
 func TestMachinePlanWithSecretsWithoutReleaseCommand(t *testing.T) {
 	currentState := happyState()
-	meta := currentState.Workloads["api"].Spec.Metadata["progresify"].(map[string]any)
+	meta := currentState.Workloads["api"].Spec.Metadata["fly"].(map[string]any)
 	delete(meta, "release_command")
 
 	plan, _, err := MachinePlanWithSecrets(currentState, "api", "staging", "0.1.0")
@@ -288,10 +287,10 @@ func TestMachinePlanWithSecretsWithoutReleaseCommand(t *testing.T) {
 	assert.Empty(t, plan.ReleaseCommand)
 }
 
-func TestMachinePlanWithSecretsWithoutProgresify(t *testing.T) {
+func TestMachinePlanWithSecretsWithoutFlyMetadata(t *testing.T) {
 	currentState := happyState()
 
-	delete(currentState.Workloads["api"].Spec.Metadata, "progresify")
+	delete(currentState.Workloads["api"].Spec.Metadata, "fly")
 
 	plan, secrets, err := MachinePlanWithSecrets(currentState, "api", "staging", "0.1.0")
 
@@ -300,14 +299,14 @@ func TestMachinePlanWithSecretsWithoutProgresify(t *testing.T) {
 	assert.Nil(t, secrets)
 }
 
-func TestMachinePlanWithSecretsWithNonObjectProgresify(t *testing.T) {
+func TestMachinePlanWithSecretsWithNonObjectFlyMetadata(t *testing.T) {
 	currentState := happyState()
 
-	currentState.Workloads["api"].Spec.Metadata["progresify"] = "nope"
+	currentState.Workloads["api"].Spec.Metadata["fly"] = "nope"
 
 	plan, secrets, err := MachinePlanWithSecrets(currentState, "api", "staging", "0.1.0")
 
-	assert.EqualError(t, err, "metadata.progresify: must be an object")
+	assert.EqualError(t, err, "metadata.fly: must be an object")
 	assert.Nil(t, plan)
 	assert.Nil(t, secrets)
 }
@@ -324,7 +323,7 @@ func TestMachinePlanWithSecretsWithUnknownWorkload(t *testing.T) {
 
 func TestMachinePlanWithSecretsRejectsProcessWithoutContainer(t *testing.T) {
 	currentState := happyState()
-	processes := currentState.Workloads["api"].Spec.Metadata["progresify"].(map[string]any)["processes"].(map[string]any)
+	processes := currentState.Workloads["api"].Spec.Metadata["fly"].(map[string]any)["processes"].(map[string]any)
 
 	processes["ghost"] = map[string]any{"restart": "always"}
 
@@ -337,13 +336,13 @@ func TestMachinePlanWithSecretsRejectsProcessWithoutContainer(t *testing.T) {
 
 func TestMachinePlanWithSecretsRejectsContainerWithoutProcess(t *testing.T) {
 	currentState := happyState()
-	processes := currentState.Workloads["api"].Spec.Metadata["progresify"].(map[string]any)["processes"].(map[string]any)
+	processes := currentState.Workloads["api"].Spec.Metadata["fly"].(map[string]any)["processes"].(map[string]any)
 
-	delete(processes, "cloudflared")
+	delete(processes, "sidecar")
 
 	plan, secrets, err := MachinePlanWithSecrets(currentState, "api", "staging", "0.1.0")
 
-	assert.ErrorContains(t, err, "container 'cloudflared' has no configuration in metadata.progresify.processes")
+	assert.ErrorContains(t, err, "container 'sidecar' has no configuration in metadata.fly.processes")
 	assert.Nil(t, plan)
 	assert.Nil(t, secrets)
 }
@@ -377,22 +376,22 @@ func TestMachinePlanWithSecretsRejectsLocalBuildImage(t *testing.T) {
 
 func TestMachinePlanWithSecretsRejectsColocationMismatch(t *testing.T) {
 	currentState := happyState()
-	processes := currentState.Workloads["api"].Spec.Metadata["progresify"].(map[string]any)["processes"].(map[string]any)
+	processes := currentState.Workloads["api"].Spec.Metadata["fly"].(map[string]any)["processes"].(map[string]any)
 
-	processes["cloudflared"].(map[string]any)["vm"] = map[string]any{"cpus": 2, "memory_mb": 512}
+	processes["sidecar"].(map[string]any)["vm"] = map[string]any{"cpus": 2, "memory_mb": 512}
 
 	plan, secrets, err := MachinePlanWithSecrets(currentState, "api", "staging", "0.1.0")
 
-	assert.ErrorContains(t, err, "machine group 'app': process 'cloudflared' must share vm, scale, and restart with process 'api'")
+	assert.ErrorContains(t, err, "machine group 'app': process 'sidecar' must share vm, scale, and restart with process 'api'")
 	assert.Nil(t, plan)
 	assert.Nil(t, secrets)
 }
 
 func TestMachinePlanWithSecretsOverridesSecretVariableWithContainerValue(t *testing.T) {
 	currentState := happyState()
-	progresifyMeta := currentState.Workloads["api"].Spec.Metadata["progresify"].(map[string]any)
+	flyMeta := currentState.Workloads["api"].Spec.Metadata["fly"].(map[string]any)
 
-	progresifyMeta["variables"] = map[string]string{
+	flyMeta["variables"] = map[string]string{
 		"LOG_LEVEL": "debug",
 		"API_TOKEN": "${resources.auth.token}",
 	}

@@ -198,20 +198,19 @@ func runReleaseCommand(ctx context.Context, d *deployer.Deployer, desired *machi
 		return fmt.Errorf("release machine create returned no machine id")
 	}
 	machineID := *machine.Id
-	var cleanupErr error
-	defer func() {
+	cleanup := func() error {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
-		cleanupErr = d.DeleteMachine(cleanupCtx, machineID, true)
-	}()
+		return d.DeleteMachine(cleanupCtx, machineID, true)
+	}
 	code, err := d.WaitExit(ctx, machineID, options.HealthTimeout, options.HealthPoll)
 	if err != nil {
-		return errors.Join(fmt.Errorf("release command: %w", err), cleanupErr)
+		return errors.Join(fmt.Errorf("release command: %w", err), cleanup())
 	}
 	if code != 0 {
-		return errors.Join(fmt.Errorf("release command exited with code %d", code), cleanupErr)
+		return errors.Join(fmt.Errorf("release command exited with code %d", code), cleanup())
 	}
-	return cleanupErr
+	return cleanup()
 }
 
 func releaseMachineConfig(group machineconfig.Group) flymachines.FlyMachineConfig {

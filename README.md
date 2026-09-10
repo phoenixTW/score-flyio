@@ -4,7 +4,11 @@
 
 A [Score](https://score.dev) implementation for [Fly.io](https://fly.io). Describe your workload once in a vendor-neutral Score spec; `score-flyio` converts it into Fly Machines deployment plans — or classic `fly.toml` for single-container apps — and deploys it with resource provisioning, secret handling, and idempotent reconciliation.
 
-Score workloads carry optional `metadata.progresify` for multi-container machine groups (colocated containers, per-group scale, release commands). Workloads without it use the legacy single-container `fly.toml` path.
+Score workloads may carry the renderer-owned `metadata.fly` extension for
+multi-container machine groups (colocation, independent scaling, and release
+commands). Application-specific configuration belongs in the caller that
+produces this extension. Workloads without it use the legacy single-container
+`fly.toml` path.
 
 ## Quickstart
 
@@ -18,7 +22,9 @@ score-flyio init --fly-app-prefix my-app-
 score-flyio generate score.yaml --deploy
 ```
 
-Legacy single-container flow: `generate` writes `<workload>.toml` + `.env`, sets secrets, and deploys. Machine flow (multi-container / `metadata.progresify`): `generate --deploy` drives the Fly Machines API directly — it never falls back to an invalid TOML plan.
+Legacy single-container flow: `generate` writes `<workload>.toml` + `.env`, sets secrets, and deploys. Machine flow (multi-container /
+`metadata.fly`): `generate --deploy` drives the Fly Machines API directly — it
+never falls back to an invalid TOML plan.
 
 ### Machine deployment commands
 
@@ -63,7 +69,9 @@ The deployment machinery under `pkg/` is domain-neutral and importable by any to
 - `pkg/flydeploy/reconcile` — apply with rollback, readiness waits, release commands
 - `pkg/state` — project state with schema versioning and file locking
 
-The library owns only `flydeploy.group` / `flydeploy.config-hash` metadata keys; everything else is caller-supplied. The `internal/` tree holds this renderer's `metadata.progresify` adapter and the CLI.
+The library owns only `flydeploy.group` / `flydeploy.config-hash` metadata keys;
+everything else is caller-supplied. The `internal/` tree contains the generic
+Score adapter and CLI.
 
 ## Resources and state
 

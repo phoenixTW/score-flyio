@@ -12,16 +12,16 @@ import (
 	"github.com/phoenixTW/score-flyio/pkg/state"
 )
 
-func TestMachinePlanMapsScoreAndProgresifyFields(t *testing.T) {
+func TestMachinePlanMapsScoreAndFlyMetadataFields(t *testing.T) {
 	currentState := machineTestState(scoretypes.Workload{
 		Metadata: scoretypes.WorkloadMetadata{
 			"name": "gateway",
-			"progresify": map[string]any{
+			"fly": map[string]any{
 				"owner":            "platform",
 				"slack_channel":    "#platform",
 				"secret_namespace": "gateway-staging",
 				"region":           "ord",
-				"ingress":          map[string]any{"type": "cloudflare", "hostname": "gateway.flowbit.work"},
+				"ingress":          map[string]any{"type": "public", "hostname": "gateway.example.test"},
 				"variables":        map[string]string{"LOG_LEVEL": "info"},
 				"processes": map[string]any{
 					"api": map[string]any{
@@ -90,8 +90,8 @@ func TestMachinePlanMapsScoreAndProgresifyFields(t *testing.T) {
 	assert.Equal(t, 3, web.MaxMachines)
 	assert.Equal(t, machineconfig.RestartPolicyAlways, web.Restart)
 	assert.Equal(t, "web", web.Metadata["flydeploy.group"])
-	assert.Equal(t, "platform", web.Metadata["progresify.owner"])
-	assert.Equal(t, "gateway-staging", web.Metadata["progresify.secret-namespace"])
+	assert.Equal(t, "platform", web.Metadata["fly.owner"])
+	assert.Equal(t, "gateway-staging", web.Metadata["fly.secret-namespace"])
 	if !assert.Len(t, web.Containers, 1) {
 		return
 	}
@@ -133,18 +133,18 @@ func TestMachinePlanColocatesContainersWithDistinctImages(t *testing.T) {
 	currentState := machineTestState(scoretypes.Workload{
 		Metadata: scoretypes.WorkloadMetadata{
 			"name": "gateway",
-			"progresify": map[string]any{"processes": map[string]any{
+			"fly": map[string]any{"processes": map[string]any{
 				"api": map[string]any{
 					"machine_group": "app", "vm": map[string]any{"cpus": 1, "memory_mb": 512}, "scale": map[string]any{"min": 1, "max": 2}, "restart": "always",
 				},
-				"cloudflared": map[string]any{
+				"sidecar": map[string]any{
 					"machine_group": "app", "vm": map[string]any{"cpus": 1, "memory_mb": 512}, "scale": map[string]any{"min": 1, "max": 2}, "restart": "always",
 				},
 			}},
 		},
 		Containers: scoretypes.WorkloadContainers{
-			"api":         {Image: "ghcr.io/example/api:abc"},
-			"cloudflared": {Image: "cloudflare/cloudflared:2024.10.0"},
+			"api":     {Image: "ghcr.io/example/api:abc"},
+			"sidecar": {Image: "registry.example/sidecar:1"},
 		},
 	})
 
@@ -158,7 +158,7 @@ func TestMachinePlanColocatesContainersWithDistinctImages(t *testing.T) {
 	assert.Equal(t, "app", plan.Groups[0].Name)
 	assert.Equal(t, []machineconfig.Container{
 		{Name: "api", Image: "ghcr.io/example/api:abc", Env: map[string]string{}, Restart: machineconfig.RestartPolicyAlways},
-		{Name: "cloudflared", Image: "cloudflare/cloudflared:2024.10.0", Env: map[string]string{}, Restart: machineconfig.RestartPolicyAlways},
+		{Name: "sidecar", Image: "registry.example/sidecar:1", Env: map[string]string{}, Restart: machineconfig.RestartPolicyAlways},
 	}, plan.Groups[0].Containers)
 }
 
@@ -196,8 +196,8 @@ func TestMachinePlanRejectsInvalidMetadataContainerCombinations(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			currentState := machineTestState(scoretypes.Workload{
 				Metadata: scoretypes.WorkloadMetadata{
-					"name":       "gateway",
-					"progresify": map[string]any{"processes": tt.processes},
+					"name": "gateway",
+					"fly":  map[string]any{"processes": tt.processes},
 				},
 				Containers: tt.containers,
 			})
@@ -209,7 +209,7 @@ func TestMachinePlanRejectsInvalidMetadataContainerCombinations(t *testing.T) {
 	}
 }
 
-func TestMachinePlanIsAbsentWithoutProgresifyMetadataAndLegacyConversionStillWorks(t *testing.T) {
+func TestMachinePlanIsAbsentWithoutFlyMetadataAndLegacyConversionStillWorks(t *testing.T) {
 	currentState := machineTestState(scoretypes.Workload{
 		Metadata:   scoretypes.WorkloadMetadata{"name": "gateway"},
 		Containers: scoretypes.WorkloadContainers{"api": {Image: "ghcr.io/example/api:1"}},

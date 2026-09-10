@@ -32,7 +32,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/phoenixTW/score-flyio/internal/convert"
-	"github.com/phoenixTW/score-flyio/internal/progresify"
+	"github.com/phoenixTW/score-flyio/internal/flymetadata"
 	"github.com/phoenixTW/score-flyio/internal/provisioners"
 	"github.com/phoenixTW/score-flyio/pkg/flydeploy/deployer"
 	"github.com/phoenixTW/score-flyio/pkg/flydeploy/reconcile"
@@ -149,7 +149,7 @@ var generateCmd = &cobra.Command{
 		mustDeploy, _ := cmd.Flags().GetBool(generateCmdDeployFlag)
 
 		if machinePlan, machineSecrets, machineErr := convert.MachinePlanWithSecrets(currentState, workloadName, "staging", rootCmd.Version); machineErr != nil {
-			if _, declared := workload.Metadata[progresify.MetadataKey]; declared {
+			if _, declared := workload.Metadata[flymetadata.MetadataKey]; declared {
 				return fmt.Errorf("failed to convert machine plan: %w", machineErr)
 			}
 		} else if machinePlan != nil {
@@ -167,19 +167,18 @@ var generateCmd = &cobra.Command{
 			if _, err := machineDeployer.EnsureApp(cmd.Context(), flymachines.CreateAppRequest{AppName: &flyAppName}); err != nil {
 				return fmt.Errorf("failed to ensure app: %w", err)
 			}
-			if len(machineSecrets) > 0 {
-				args := []string{"secrets", "set", "--access-token", client.ApiToken, "--app", flyAppName, "--stage"}
-				for key, value := range machineSecrets {
-					args = append(args, fmt.Sprintf("%s=%s", key, value))
-				}
-				secretCommand := exec.Command("fly", args...)
-				secretCommand.Stderr, secretCommand.Stdout = cmd.ErrOrStderr(), cmd.OutOrStdout()
-				if err := secretCommand.Run(); err != nil {
-					return fmt.Errorf("failed to set machine secrets: %w", err)
-				}
-			}
-			if _, err := reconcile.Apply(cmd.Context(), machineDeployer, machinePlan, reconcile.Options{}); err != nil {
+			if err := setMachineSecrets(cmd, client.ApiToken, flyAppName, machineSecrets); err != nil {
 				return err
+			}
+			machineInput := &machineInput{state: currentState, plan: machinePlan, secrets: machineSecrets}
+			skipRelease, releaseHash := releaseOptions(machineInput)
+			if _, err := reconcile.Apply(cmd.Context(), machineDeployer, machinePlan, reconcile.Options{SkipRelease: skipRelease}); err != nil {
+				return err
+			}
+			if !skipRelease {
+				if err := persistReleaseHash(machineInput, releaseHash); err != nil {
+					return err
+				}
 			}
 			return nil
 		}
@@ -228,15 +227,8 @@ var generateCmd = &cobra.Command{
 				}
 				if len(secrets) > 0 {
 					slog.Info("Setting secrets on app", slog.String("app", flyAppName), slog.Int("#secrets", len(secrets)))
-					args := []string{"secrets", "set", "--access-token", client.ApiToken, "--app", flyAppName, "--stage"}
-					for s, s2 := range secrets {
-						args = append(args, fmt.Sprintf("%s=%s", s, s2))
-					}
-					c := exec.Command("fly", args...)
-					c.Stderr = cmd.ErrOrStderr()
-					c.Stdout = cmd.OutOrStdout()
-					if err := c.Run(); err != nil {
-						return fmt.Errorf("failed to set secrets on app: %w", err)
+					if err := setMachineSecrets(cmd, client.ApiToken, flyAppName, secrets); err != nil {
+						return err
 					}
 				}
 				slog.Info("Deploying to app", slog.String("app", flyAppName))
