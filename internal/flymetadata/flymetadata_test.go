@@ -302,11 +302,6 @@ func TestValidateErrors(t *testing.T) {
 			expected: "processes[worker].scale.max: must be >= min",
 		},
 		{
-			name:     "scale max above limit",
-			mutate:   func(m *Metadata) { m.Processes["worker"].Scale.Max = 11 },
-			expected: "processes[worker].scale.max: must be <= 10",
-		},
-		{
 			name:     "vm cpus below one",
 			mutate:   func(m *Metadata) { m.Processes["worker"].Vm.Cpus = 0 },
 			expected: "processes[worker].vm.cpus: must be >= 1",
@@ -452,5 +447,17 @@ func TestParsePublishedFlyMetadataShape(t *testing.T) {
 	assert.Equal(t, 2, service.Vm.Cpus)
 	assert.Equal(t, 512, service.Vm.MemoryMb)
 	assert.Equal(t, "stop", service.HttpService.AutoStop)
+	if assert.NotNil(t, service.HttpService.AutoStart) {
+		assert.True(t, *service.HttpService.AutoStart)
+	}
 	assert.Equal(t, "/ready", service.HttpService.Checks["ready"].Path)
+}
+
+func TestValidateAllowsCallerDefinedScaleAboveTen(t *testing.T) {
+	metadata := happyMetadata()
+	mutateProcess(metadata, "worker", func(process *Process) {
+		process.Scale = &Scale{Min: 20, Max: 25}
+	})
+
+	assert.NoError(t, Validate(metadata, happyContainers()))
 }

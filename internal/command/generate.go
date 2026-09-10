@@ -47,6 +47,7 @@ const (
 	generateCmdEnvSecretsFlag       = "secrets-file"
 	generateCmdDeployFlag           = "deploy"
 	generateCmdDeployArgsFlag       = "deploy-args"
+	generateCmdEnvironmentFlag      = "environment"
 )
 
 var generateCmd = &cobra.Command{
@@ -148,7 +149,8 @@ var generateCmd = &cobra.Command{
 		flyAppToml := fmt.Sprintf("fly_%s.toml", workloadName)
 		mustDeploy, _ := cmd.Flags().GetBool(generateCmdDeployFlag)
 
-		if machinePlan, machineSecrets, machineErr := convert.MachinePlanWithSecrets(currentState, workloadName, "staging", rootCmd.Version); machineErr != nil {
+		machineEnvironment, _ := cmd.Flags().GetString(generateCmdEnvironmentFlag)
+		if machinePlan, machineSecrets, machineErr := convert.MachinePlanWithSecrets(currentState, workloadName, machineEnvironment, rootCmd.Version); machineErr != nil {
 			if _, declared := workload.Metadata[flymetadata.MetadataKey]; declared {
 				return fmt.Errorf("failed to convert machine plan: %w", machineErr)
 			}
@@ -323,5 +325,6 @@ func init() {
 	generateCmd.Flags().String(generateCmdEnvSecretsFlag, "", "An optional output file for the runtime secrets in KEY=VALUE format")
 	generateCmd.Flags().Bool(generateCmdDeployFlag, false, "Deploy the Fly app and secrets after generating the manifests")
 	generateCmd.Flags().StringArray(generateCmdDeployArgsFlag, []string{}, "Provide space-separated CLI arguments for customizing --deploy")
+	generateCmd.Flags().String(generateCmdEnvironmentFlag, "", "An optional caller-defined deployment environment label")
 	rootCmd.AddCommand(generateCmd)
 }

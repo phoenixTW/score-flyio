@@ -10,6 +10,8 @@ import (
 	"maps"
 	"os"
 	"os/exec"
+	"regexp"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -39,6 +41,7 @@ type machineCommandOptions struct {
 	yes              bool
 	planFile         string
 	planOutput       string
+	secretsFile      string
 }
 
 type machineInput struct {
@@ -55,11 +58,23 @@ var execFly = func(args []string, stdout, stderr io.Writer) error {
 	return flyCommand.Run()
 }
 
-var execFlyWithInput = func(args []string, stdin string, stdout, stderr io.Writer) error {
+var execFlyWithInput = func(args []string, token, stdin string, stdout, stderr io.Writer) error {
 	flyCommand := exec.Command("fly", args...)
+	flyCommand.Env = environmentWithFlyToken(flyCommand.Environ(), token)
 	flyCommand.Stdin = strings.NewReader(stdin)
 	flyCommand.Stdout, flyCommand.Stderr = stdout, stderr
 	return flyCommand.Run()
+}
+
+func environmentWithFlyToken(environment []string, token string) []string {
+	const tokenKey = "FLY_API_TOKEN="
+	out := make([]string, 0, len(environment)+1)
+	for _, entry := range environment {
+		if !strings.HasPrefix(entry, tokenKey) {
+			out = append(out, entry)
+		}
+	}
+	return append(out, tokenKey+token)
 }
 
 type machineHookSet struct {
@@ -253,9 +268,15 @@ type machineScale struct {
 }
 
 type exactMachinePlanFile struct {
-	Plan   machineconfig.Plan `json:"plan"`
-	SHA256 string             `json:"sha256"`
+	Version         int                `json:"version"`
+	Plan            machineconfig.Plan `json:"plan"`
+	RequiredSecrets []string           `json:"required_secrets,omitempty"`
+	SHA256          string             `json:"sha256"`
 }
+
+const exactMachinePlanVersion = 1
+
+var secretNameRegexp = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func outputFor(input *machineInput, changes []planner.MachineChange) machinePlanOutput {
 	out := machinePlanOutput{AppName: input.plan.AppName, Workload: input.plan.Workload, RendererVersion: input.plan.RendererVersion, DeployEnvironment: input.plan.Environment, Changes: changes}
@@ -299,6 +320,7 @@ func machineOptions(cmd *cobra.Command) machineCommandOptions {
 	o.yes, _ = cmd.Flags().GetBool("yes")
 	o.planFile, _ = cmd.Flags().GetString("plan-file")
 	o.planOutput, _ = cmd.Flags().GetString("plan-output")
+	o.secretsFile, _ = cmd.Flags().GetString("secrets-file")
 	return o
 }
 
@@ -306,7 +328,7 @@ func setupMachineFlags(cmd *cobra.Command, includeYes bool) {
 	cmd.Flags().String("overrides-file", "", "optional Score overrides file")
 	cmd.Flags().StringArray("override-property", nil, "Score path=value override")
 	cmd.Flags().String("image", "", "image to use for containers with image '.'")
-	cmd.Flags().String("environment", "staging", "deployment environment")
+	cmd.Flags().String("environment", "", "optional caller-defined deployment environment label")
 	cmd.Flags().Bool("dry-run", false, "do not contact Fly")
 	cmd.Flags().String("plan-file", "", "consume an exact machine plan JSON file")
 	cmd.Flags().String("plan-output", "", "write the exact machine plan JSON to this file")
@@ -338,12 +360,13 @@ func runMachinePlan(cmd *cobra.Command, args []string) error {
 	}
 	options := machineOptions(cmd)
 	if options.planOutput != "" {
-		planRaw, marshalErr := json.Marshal(input.plan)
-		if marshalErr != nil {
-			return marshalErr
+		requiredSecrets := slices.Sorted(maps.Keys(input.secrets))
+		exactPlan := exactMachinePlanFile{Version: exactMachinePlanVersion, Plan: *input.plan, RequiredSecrets: requiredSecrets}
+		exactPlan.SHA256, err = exactMachinePlanChecksum(exactPlan)
+		if err != nil {
+			return err
 		}
-		sum := sha256.Sum256(planRaw)
-		artifact, marshalErr := json.MarshalIndent(exactMachinePlanFile{Plan: *input.plan, SHA256: hex.EncodeToString(sum[:])}, "", "  ")
+		artifact, marshalErr := json.MarshalIndent(exactPlan, "", "  ")
 		if marshalErr != nil {
 			return marshalErr
 		}
@@ -359,39 +382,33 @@ func runMachineApply(cmd *cobra.Command, args []string) error {
 	if options.dryRun {
 		return fmt.Errorf("--dry-run is only supported by plan and validate")
 	}
-	input, err := loadMachineInput(cmd, args[0], options, true)
+	if options.planFile == "" && options.secretsFile != "" {
+		return fmt.Errorf("--secrets-file requires --plan-file")
+	}
+
+	var exactPlan *exactMachinePlanFile
+	var exactSecrets map[string]string
+	if options.planFile != "" {
+		var err error
+		exactPlan, exactSecrets, err = loadExactMachinePlan(options.planFile, options.secretsFile)
+		if err != nil {
+			return err
+		}
+	}
+
+	input, err := loadMachineInput(cmd, args[0], options, exactPlan == nil)
 	if err != nil {
 		return err
 	}
-	if options.planFile != "" {
-		raw, readErr := os.ReadFile(options.planFile)
-		if readErr != nil {
-			return fmt.Errorf("read plan: %w", readErr)
+	if exactPlan != nil {
+		if exactPlan.Plan.AppName != input.plan.AppName || exactPlan.Plan.Workload != input.plan.Workload {
+			return fmt.Errorf("plan file targets app %q workload %q but score file targets app %q workload %q", exactPlan.Plan.AppName, exactPlan.Plan.Workload, input.plan.AppName, input.plan.Workload)
 		}
-		var artifact exactMachinePlanFile
-		if decodeErr := json.Unmarshal(raw, &artifact); decodeErr != nil {
-			return fmt.Errorf("decode plan: %w", decodeErr)
+		input.plan = &exactPlan.Plan
+		input.secrets = exactSecrets
+		if err := persistMachineState(input.state); err != nil {
+			return err
 		}
-		planRaw, marshalErr := json.Marshal(artifact.Plan)
-		if marshalErr != nil {
-			return marshalErr
-		}
-		sum := sha256.Sum256(planRaw)
-		if artifact.SHA256 != hex.EncodeToString(sum[:]) {
-			return fmt.Errorf("plan integrity check failed")
-		}
-		exact := artifact.Plan
-		if exact.AppName != input.plan.AppName || exact.Workload != input.plan.Workload {
-			return fmt.Errorf("plan file targets app %q workload %q but score file targets app %q workload %q", exact.AppName, exact.Workload, input.plan.AppName, input.plan.Workload)
-		}
-		if validateErr := exact.Validate(); validateErr != nil {
-			return fmt.Errorf("invalid plan: %w", validateErr)
-		}
-		if validateErr := exact.ValidateImmutableImages(); validateErr != nil {
-			return validateErr
-		}
-		input.plan = &exact
-		input.secrets = nil
 	}
 	changes, err := planner.Diff(input.plan, nil)
 	if err != nil {
@@ -404,6 +421,160 @@ func runMachineApply(cmd *cobra.Command, args []string) error {
 		return writeMachineJSON(cmd, outputFor(input, changes))
 	}
 	return applyMachinePlanLive(cmd, input)
+}
+
+func exactMachinePlanChecksum(artifact exactMachinePlanFile) (string, error) {
+	payload := struct {
+		Version         int                `json:"version"`
+		Plan            machineconfig.Plan `json:"plan"`
+		RequiredSecrets []string           `json:"required_secrets,omitempty"`
+	}{Version: artifact.Version, Plan: artifact.Plan, RequiredSecrets: artifact.RequiredSecrets}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("encode plan checksum: %w", err)
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func loadExactMachinePlan(planFile, secretsFile string) (*exactMachinePlanFile, map[string]string, error) {
+	raw, err := os.ReadFile(planFile)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read plan: %w", err)
+	}
+	var artifact exactMachinePlanFile
+	if err := json.Unmarshal(raw, &artifact); err != nil {
+		return nil, nil, fmt.Errorf("decode plan: %w", err)
+	}
+	if artifact.Version != exactMachinePlanVersion {
+		return nil, nil, fmt.Errorf("unsupported plan file version %d; regenerate the plan", artifact.Version)
+	}
+	wantChecksum, err := exactMachinePlanChecksum(artifact)
+	if err != nil {
+		return nil, nil, err
+	}
+	if artifact.SHA256 != wantChecksum {
+		return nil, nil, fmt.Errorf("plan integrity check failed")
+	}
+	if err := validateRequiredSecretNames(artifact.RequiredSecrets); err != nil {
+		return nil, nil, fmt.Errorf("invalid plan: %w", err)
+	}
+	if err := artifact.Plan.Validate(); err != nil {
+		return nil, nil, fmt.Errorf("invalid plan: %w", err)
+	}
+	if err := artifact.Plan.ValidateImmutableImages(); err != nil {
+		return nil, nil, err
+	}
+	if len(artifact.RequiredSecrets) > 0 && secretsFile == "" {
+		return nil, nil, fmt.Errorf("plan requires secrets %s; provide --secrets-file", strings.Join(artifact.RequiredSecrets, ", "))
+	}
+	secrets := map[string]string{}
+	if secretsFile != "" {
+		secrets, err = readMachineSecretsFile(secretsFile)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	if err := validateExactPlanSecrets(artifact.RequiredSecrets, secrets); err != nil {
+		return nil, nil, err
+	}
+	return &artifact, secrets, nil
+}
+
+func validateRequiredSecretNames(names []string) error {
+	for i, name := range names {
+		if !secretNameRegexp.MatchString(name) {
+			return fmt.Errorf("required secret name %q is invalid", name)
+		}
+		if i > 0 && name <= names[i-1] {
+			return fmt.Errorf("required secret names must be sorted and unique")
+		}
+	}
+	return nil
+}
+
+func readMachineSecretsFile(path string) (map[string]string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("read secrets file: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("secrets file must be a regular file")
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
+		return nil, fmt.Errorf("secrets file permissions must be 0600 or more restrictive")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read secrets file: %w", err)
+	}
+	secrets := make(map[string]string)
+	lines := strings.Split(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n")
+	for lineNumber := 0; lineNumber < len(lines); lineNumber++ {
+		line := lines[lineNumber]
+		if line == "" {
+			continue
+		}
+		key, value, found := strings.Cut(line, "=")
+		if !found || !secretNameRegexp.MatchString(key) {
+			return nil, fmt.Errorf("secrets file line %d must be KEY=VALUE with a valid key", lineNumber+1)
+		}
+		if strings.HasPrefix(value, `"""`) {
+			value = strings.TrimPrefix(value, `"""`)
+			for !strings.HasSuffix(value, `"""`) {
+				lineNumber++
+				if lineNumber >= len(lines) {
+					return nil, fmt.Errorf("secrets file value for %q has an unterminated triple quote", key)
+				}
+				value += "\n" + lines[lineNumber]
+			}
+			value = strings.TrimSuffix(value, `"""`)
+		}
+		if _, duplicate := secrets[key]; duplicate {
+			return nil, fmt.Errorf("secrets file contains duplicate key %q", key)
+		}
+		secrets[key] = value
+	}
+	return secrets, nil
+}
+
+func validateExactPlanSecrets(required []string, supplied map[string]string) error {
+	requiredSet := make(map[string]struct{}, len(required))
+	for _, name := range required {
+		requiredSet[name] = struct{}{}
+	}
+	missing := make([]string, 0)
+	for _, name := range required {
+		if _, ok := supplied[name]; !ok {
+			missing = append(missing, name)
+		}
+	}
+	unexpected := make([]string, 0)
+	for name := range supplied {
+		if _, ok := requiredSet[name]; !ok {
+			unexpected = append(unexpected, name)
+		}
+	}
+	slices.Sort(unexpected)
+	if len(missing) > 0 || len(unexpected) > 0 {
+		return fmt.Errorf("secrets file keys do not match plan (missing: %v, unexpected: %v)", missing, unexpected)
+	}
+	return nil
+}
+
+func persistMachineState(current *state.State) error {
+	sd, ok, err := state.LoadStateDirectory(".")
+	if err != nil {
+		return fmt.Errorf("failed to load existing state directory: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("state directory does not exist, please run \"init\" first")
+	}
+	sd.State = *current
+	if err := sd.Persist(); err != nil {
+		return fmt.Errorf("failed to persist state file: %w", err)
+	}
+	return nil
 }
 
 func runMachineValidate(cmd *cobra.Command, args []string) error {
@@ -544,8 +715,8 @@ func setMachineSecrets(cmd *cobra.Command, token, app string, secrets map[string
 	for _, key := range keys {
 		lines = append(lines, fmt.Sprintf("%s=%s", key, secrets[key]))
 	}
-	args := []string{"secrets", "set", "--access-token", token, "--app", app, "--stage", "-i"}
-	if err := execFlyWithInput(args, strings.Join(lines, "\n")+"\n", cmd.ErrOrStderr(), cmd.ErrOrStderr()); err != nil {
+	args := []string{"secrets", "import", "--app", app, "--stage"}
+	if err := execFlyWithInput(args, token, strings.Join(lines, "\n")+"\n", cmd.ErrOrStderr(), cmd.ErrOrStderr()); err != nil {
 		return fmt.Errorf("failed to set machine secrets: %w", err)
 	}
 	return nil
@@ -724,6 +895,7 @@ func init() {
 	validate := newMachineCommand("validate SCORE_FILE", runMachineValidate, false)
 	plan := newMachineCommand("plan SCORE_FILE", runMachinePlan, false)
 	apply := newMachineCommand("apply SCORE_FILE", runMachineApply, false)
+	apply.Flags().String("secrets-file", "", "read exact-plan runtime secrets from a permission-restricted KEY=VALUE file")
 	status := newMachineCommand("status SCORE_FILE", runMachineStatus, false)
 	reconcileCmd := newMachineCommand("reconcile SCORE_FILE", runMachineReconcile, false)
 	destroy := newMachineCommand("destroy SCORE_FILE", runMachineDestroy, true)

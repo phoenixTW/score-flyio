@@ -80,6 +80,7 @@ type HttpService struct {
 	Ports              []ServicePort    `json:"ports"`
 	Protocol           string           `json:"protocol"`
 	AutoStop           string           `json:"auto_stop"`
+	AutoStart          *bool            `json:"auto_start"`
 	MinMachinesRunning int              `json:"min_machines_running"`
 	Checks             map[string]Check `json:"checks"`
 }
@@ -371,7 +372,7 @@ func normalizePublishedHTTPService(value any, process string) (map[string]any, e
 		return nil, fmt.Errorf("processes.%s.httpService must be an object", process)
 	}
 	out := map[string]any{}
-	for source, destination := range map[string]string{"internalPort": "internal_port", "ports": "ports", "protocol": "protocol", "minMachinesRunning": "min_machines_running"} {
+	for source, destination := range map[string]string{"internalPort": "internal_port", "ports": "ports", "protocol": "protocol", "autoStartMachines": "auto_start", "minMachinesRunning": "min_machines_running"} {
 		if value, ok := service[source]; ok {
 			out[destination] = value
 		}
@@ -558,9 +559,6 @@ func validateProcess(name string, p Process) []error {
 		}
 		if p.Scale.Max < p.Scale.Min {
 			errs = append(errs, fmt.Errorf("processes[%s].scale.max: must be >= min", name))
-		}
-		if p.Scale.Max > 10 {
-			errs = append(errs, fmt.Errorf("processes[%s].scale.max: must be <= 10", name))
 		}
 	}
 	if p.HttpService != nil {

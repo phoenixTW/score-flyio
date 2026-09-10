@@ -250,11 +250,6 @@ func TestValidateFailures(t *testing.T) {
 			want: "max_machines 1 must be at least min_machines 2",
 		},
 		{
-			name: "max machines too high",
-			give: func(p *Plan) { p.Groups[0].MaxMachines = 11 },
-			want: "max_machines 11 must not exceed 10",
-		},
-		{
 			name: "unsorted volumes",
 			give: func(p *Plan) {
 				p.Groups[0].Volumes = []Volume{{Name: "zeta"}, {Name: "alpha"}}
@@ -436,6 +431,14 @@ func TestValidateFailures(t *testing.T) {
 	}
 }
 
+func TestValidateAllowsCallerDefinedScaleAboveTen(t *testing.T) {
+	plan := happyPlan()
+	plan.Groups[0].MinMachines = 20
+	plan.Groups[0].MaxMachines = 25
+
+	assert.NoError(t, plan.Validate())
+}
+
 func TestToFlyMachineConfigMapsAllFields(t *testing.T) {
 	g := happyGroup()
 	expected := flymachines.FlyMachineConfig{
@@ -526,6 +529,26 @@ func TestToFlyMachineConfigMapsAllFields(t *testing.T) {
 		Metadata: &map[string]string{"flydeploy.group": "app"},
 	}
 	assert.Equal(t, expected, g.ToFlyMachineConfig())
+}
+
+func TestServiceExplicitAutoStartFalseSurvivesPlanJSONAndFlyConversion(t *testing.T) {
+	plan := happyPlan()
+	plan.Groups[0].Services[0].AutoStart = false
+	plan.Groups[0].Services[0].AutoStartSet = true
+
+	raw, err := json.Marshal(plan)
+	assert.NoError(t, err)
+	assert.Contains(t, string(raw), `"auto_start":false`)
+
+	var decoded Plan
+	assert.NoError(t, json.Unmarshal(raw, &decoded))
+	service := decoded.Groups[0].Services[0]
+	assert.False(t, service.AutoStart)
+	assert.True(t, service.AutoStartSet)
+	flyService := (*decoded.Groups[0].ToFlyMachineConfig().Services)[0]
+	if assert.NotNil(t, flyService.Autostart) {
+		assert.False(t, *flyService.Autostart)
+	}
 }
 
 func TestConfigHashIsStableAndSensitive(t *testing.T) {

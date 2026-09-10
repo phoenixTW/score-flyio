@@ -137,6 +137,7 @@ type Service struct {
 	Ports              []ServicePort      `json:"ports,omitempty"`
 	AutoStop           string             `json:"auto_stop,omitempty"`
 	AutoStart          bool               `json:"auto_start,omitempty"`
+	AutoStartSet       bool               `json:"-"`
 	MinMachinesRunning int                `json:"min_machines_running,omitempty"`
 	Concurrency        map[string]any     `json:"concurrency,omitempty"`
 	Checks             []ServiceHttpCheck `json:"checks,omitempty"`
@@ -146,6 +147,38 @@ type Service struct {
 type ServicePort struct {
 	Port     int      `json:"port"`
 	Handlers []string `json:"handlers,omitempty"`
+}
+
+// MarshalJSON preserves an explicitly configured false auto-start value while
+// keeping the v0.1.1 boolean field source-compatible.
+func (s Service) MarshalJSON() ([]byte, error) {
+	type serviceAlias Service
+	if !s.AutoStartSet {
+		return json.Marshal(serviceAlias(s))
+	}
+	return json.Marshal(struct {
+		serviceAlias
+		AutoStart *bool `json:"auto_start"`
+	}{serviceAlias: serviceAlias(s), AutoStart: &s.AutoStart})
+}
+
+// UnmarshalJSON tracks whether auto_start was explicitly supplied so false is
+// retained when an exact plan is applied.
+func (s *Service) UnmarshalJSON(raw []byte) error {
+	type serviceAlias Service
+	decoded := struct {
+		serviceAlias
+		AutoStart *bool `json:"auto_start"`
+	}{}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return err
+	}
+	*s = Service(decoded.serviceAlias)
+	if decoded.AutoStart != nil {
+		s.AutoStart = *decoded.AutoStart
+		s.AutoStartSet = true
+	}
+	return nil
 }
 
 // ServiceHttpCheck probes the service HTTP endpoint for readiness.
@@ -274,9 +307,6 @@ func (g *Group) validate(path string) error {
 	}
 	if g.MaxMachines < g.MinMachines {
 		return fmt.Errorf("%s: max_machines %d must be at least min_machines %d", path, g.MaxMachines, g.MinMachines)
-	}
-	if g.MaxMachines > 10 {
-		return fmt.Errorf("%s: max_machines %d must not exceed 10", path, g.MaxMachines)
 	}
 	for i := range g.Volumes {
 		if i > 0 && g.Volumes[i].Name <= g.Volumes[i-1].Name {
@@ -558,8 +588,8 @@ func (s *Service) toFlyMachineService() flymachines.FlyMachineService {
 	if s.AutoStop != "" {
 		out.Autostop = internal.Ref(flymachines.FlyMachineServiceAutostop(s.AutoStop))
 	}
-	if s.AutoStart {
-		out.Autostart = internal.Ref(true)
+	if s.AutoStartSet || s.AutoStart {
+		out.Autostart = internal.Ref(s.AutoStart)
 	}
 	if s.MinMachinesRunning > 0 {
 		out.MinMachinesRunning = internal.Ref(s.MinMachinesRunning)

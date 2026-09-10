@@ -28,6 +28,12 @@ Plans may include secret names and secret references, but never secret values.
 The exact plan passed to `apply` is the plan produced by `plan`; applying a
 different input requires creating a new plan.
 
+Exact plan artifacts record required secret names but never values. If an exact
+plan requires secrets, `apply --plan-file` also requires `--secrets-file`; that
+file must be readable only by its owner and contain exactly the required
+`KEY=VALUE` entries. Older artifacts without a versioned required-secret list
+must be regenerated before apply.
+
 ## Compatibility
 
 `init`, `generate`, `generate --deploy`, provisioners, overrides, and secret

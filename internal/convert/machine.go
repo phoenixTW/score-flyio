@@ -367,11 +367,18 @@ func groupMetadata(workloadName string, environment string, rendererVersion stri
 }
 
 func serviceFromHttpService(hs *flymetadata.HttpService, concurrency map[string]any) machineconfig.Service {
+	autoStart := hs.AutoStop != "" && hs.AutoStop != "off"
+	autoStartSet := false
+	if hs.AutoStart != nil {
+		autoStart = *hs.AutoStart
+		autoStartSet = true
+	}
 	svc := machineconfig.Service{
 		Protocol:           "tcp",
 		InternalPort:       hs.InternalPort,
 		AutoStop:           hs.AutoStop,
-		AutoStart:          hs.AutoStop != "" && hs.AutoStop != "off",
+		AutoStart:          autoStart,
+		AutoStartSet:       autoStartSet,
 		MinMachinesRunning: hs.MinMachinesRunning,
 		Concurrency:        maps.Clone(concurrency),
 	}

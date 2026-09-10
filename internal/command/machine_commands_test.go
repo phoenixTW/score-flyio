@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -372,23 +373,162 @@ containers:
 
 func TestSetMachineSecretsPipesSecretsViaStdin(t *testing.T) {
 	var capturedArgs []string
+	var capturedToken string
 	var capturedStdin string
 	original := execFlyWithInput
-	execFlyWithInput = func(args []string, stdin string, stdout, stderr io.Writer) error {
+	execFlyWithInput = func(args []string, token, stdin string, stdout, stderr io.Writer) error {
 		capturedArgs = args
+		capturedToken = token
 		capturedStdin = stdin
+		_, _ = fmt.Fprintln(stdout, "secrets staged")
 		return nil
 	}
 	t.Cleanup(func() { execFlyWithInput = original })
 
 	cmd := &cobra.Command{}
-	cmd.SetErr(io.Discard)
+	logs := &strings.Builder{}
+	cmd.SetErr(logs)
 
 	err := setMachineSecrets(cmd, "token-value", "app-value", map[string]string{"B_PASSWORD": "hunter2", "A_PASSWORD": "s3cret"})
 
 	assert.NoError(t, err)
-	assert.Contains(t, capturedArgs, "-i")
+	assert.Equal(t, []string{"secrets", "import", "--app", "app-value", "--stage"}, capturedArgs)
+	assert.Equal(t, "token-value", capturedToken)
+	assert.NotContains(t, capturedArgs, "token-value")
 	assert.NotContains(t, capturedArgs, "hunter2")
 	assert.NotContains(t, capturedArgs, "s3cret")
 	assert.Equal(t, "A_PASSWORD=s3cret\nB_PASSWORD=hunter2\n", capturedStdin)
+	assert.NotContains(t, logs.String(), "token-value")
+	assert.NotContains(t, logs.String(), "hunter2")
+	assert.NotContains(t, logs.String(), "s3cret")
+}
+
+func TestEnvironmentWithFlyTokenReplacesExistingToken(t *testing.T) {
+	environment := environmentWithFlyToken([]string{"PATH=/bin", "FLY_API_TOKEN=old-token"}, "new-token")
+
+	assert.Equal(t, []string{"PATH=/bin", "FLY_API_TOKEN=new-token"}, environment)
+}
+
+func TestMachinePlanArtifactRecordsSecretNamesWithoutValues(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"secrets":{"token":"plan-secret-value"}}`))
+	}))
+	t.Cleanup(server.Close)
+	workloadFile := writeMachineCommandFixture(t, strings.Repeat("4", 64))
+	raw, err := os.ReadFile(workloadFile)
+	assert.NoError(t, err)
+	raw = []byte(strings.Replace(string(raw), "super-secret-runtime-value", "${resources.auth.token}", 1) + "resources:\n  auth:\n    type: credentials\n")
+	assert.NoError(t, os.WriteFile(workloadFile, raw, 0600))
+	sd, ok, err := state.LoadStateDirectory(".")
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	sd.State.Extras.Provisioners = []state.Provisioner{{
+		ProvisionerId: "test",
+		ResourceType:  "credentials",
+		Http:          &state.HttpProvisioner{Url: server.URL},
+	}}
+	assert.NoError(t, sd.Persist())
+
+	stdout, stderr, err := executeAndResetCommand(context.Background(), rootCmd, []string{"plan", workloadFile, "--dry-run", "--plan-output", "exact-plan.json"})
+
+	assert.NoError(t, err)
+	artifact, readErr := os.ReadFile("exact-plan.json")
+	assert.NoError(t, readErr)
+	assert.Contains(t, string(artifact), "\"required_secrets\": [\n    \"RUNTIME_SECRET\"")
+	for _, output := range []string{stdout, stderr, string(artifact)} {
+		assert.NotContains(t, output, "plan-secret-value")
+	}
+}
+
+func writeExactPlanFixture(t *testing.T, workloadFile string, requiredSecrets []string) string {
+	t.Helper()
+	input, err := loadMachineInput(&cobra.Command{}, workloadFile, machineCommandOptions{}, false)
+	if !assert.NoError(t, err) {
+		t.FailNow()
+	}
+	artifact := exactMachinePlanFile{
+		Version:         exactMachinePlanVersion,
+		Plan:            *input.plan,
+		RequiredSecrets: requiredSecrets,
+	}
+	artifact.SHA256, err = exactMachinePlanChecksum(artifact)
+	if !assert.NoError(t, err) {
+		t.FailNow()
+	}
+	raw, err := json.Marshal(artifact)
+	if !assert.NoError(t, err) {
+		t.FailNow()
+	}
+	path := "machine-plan.json"
+	if !assert.NoError(t, os.WriteFile(path, raw, 0600)) {
+		t.FailNow()
+	}
+	return path
+}
+
+func TestExactPlanWithRequiredSecretsFailsBeforeMutationWithoutSecretsFile(t *testing.T) {
+	workloadFile := writeMachineCommandFixture(t, strings.Repeat("1", 64))
+	planFile := writeExactPlanFixture(t, workloadFile, []string{"API_TOKEN"})
+	statePath := state.DefaultRelativeStateDirectory + "/" + state.FileName
+	stateBefore, err := os.ReadFile(statePath)
+	assert.NoError(t, err)
+	previousHooks := machineHooks
+	machineHooks.apply = func(context.Context, *machineconfig.Plan, []planner.MachineChange, map[string]string) error {
+		t.Fatal("apply hook must not run when exact-plan secrets are missing")
+		return nil
+	}
+	t.Cleanup(func() { machineHooks = previousHooks })
+
+	stdout, stderr, err := executeAndResetCommand(context.Background(), rootCmd, []string{"apply", workloadFile, "--plan-file", planFile})
+
+	assert.EqualError(t, err, "plan requires secrets API_TOKEN; provide --secrets-file")
+	assert.NotContains(t, stdout, "super-secret-runtime-value")
+	assert.NotContains(t, stderr, "super-secret-runtime-value")
+	stateAfter, readErr := os.ReadFile(statePath)
+	assert.NoError(t, readErr)
+	assert.Equal(t, stateBefore, stateAfter)
+}
+
+func TestExactPlanLoadsOnlyRequiredSecretsFromRestrictedFile(t *testing.T) {
+	workloadFile := writeMachineCommandFixture(t, strings.Repeat("2", 64))
+	planFile := writeExactPlanFixture(t, workloadFile, []string{"API_TOKEN"})
+	secretsFile := "machine-secrets.env"
+	assert.NoError(t, os.WriteFile(secretsFile, []byte("API_TOKEN=exact-secret-value\n"), 0600))
+	previousHooks := machineHooks
+	machineHooks.apply = func(_ context.Context, _ *machineconfig.Plan, _ []planner.MachineChange, secrets map[string]string) error {
+		assert.Equal(t, map[string]string{"API_TOKEN": "exact-secret-value"}, secrets)
+		return nil
+	}
+	t.Cleanup(func() { machineHooks = previousHooks })
+
+	stdout, stderr, err := executeAndResetCommand(context.Background(), rootCmd, []string{"apply", workloadFile, "--plan-file", planFile, "--secrets-file", secretsFile})
+
+	assert.NoError(t, err)
+	assert.NotContains(t, stdout, "exact-secret-value")
+	assert.NotContains(t, stderr, "exact-secret-value")
+}
+
+func TestExactPlanRejectsOverexposedSecretsFileBeforeMutation(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("POSIX file modes are not available")
+	}
+	workloadFile := writeMachineCommandFixture(t, strings.Repeat("3", 64))
+	planFile := writeExactPlanFixture(t, workloadFile, []string{"API_TOKEN"})
+	secretsFile := "machine-secrets.env"
+	assert.NoError(t, os.WriteFile(secretsFile, []byte("API_TOKEN=exact-secret-value\n"), 0644))
+
+	_, _, err := executeAndResetCommand(context.Background(), rootCmd, []string{"apply", workloadFile, "--plan-file", planFile, "--secrets-file", secretsFile})
+
+	assert.EqualError(t, err, "secrets file permissions must be 0600 or more restrictive")
+}
+
+func TestReadMachineSecretsFileAcceptsGenerateMultilineFormat(t *testing.T) {
+	path := t.TempDir() + "/machine-secrets.env"
+	assert.NoError(t, writeSecretsFile(map[string]string{"TOKEN": "line one\nline two", "URL": "https://example.test?a=b"}, path))
+
+	secrets, err := readMachineSecretsFile(path)
+
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]string{"TOKEN": "line one\nline two", "URL": "https://example.test?a=b"}, secrets)
 }

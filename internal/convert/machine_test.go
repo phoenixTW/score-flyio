@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/phoenixTW/score-flyio/internal"
+	"github.com/phoenixTW/score-flyio/internal/flymetadata"
 	"github.com/phoenixTW/score-flyio/internal/provisioners"
 	"github.com/phoenixTW/score-flyio/pkg/flydeploy/machineconfig"
 	"github.com/phoenixTW/score-flyio/pkg/state"
@@ -297,6 +298,22 @@ func TestMachinePlanWithSecretsWithoutFlyMetadata(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Nil(t, plan)
 	assert.Nil(t, secrets)
+}
+
+func TestPublishedHTTPAutoStartFalseIsPreserved(t *testing.T) {
+	configured := false
+	service := serviceFromHttpService(&flymetadata.HttpService{
+		InternalPort: 8080,
+		AutoStop:     "stop",
+		AutoStart:    &configured,
+	}, nil)
+
+	assert.False(t, service.AutoStart)
+	assert.True(t, service.AutoStartSet)
+	flyService := (*(&machineconfig.Group{Services: []machineconfig.Service{service}}).ToFlyMachineConfig().Services)[0]
+	if assert.NotNil(t, flyService.Autostart) {
+		assert.False(t, *flyService.Autostart)
+	}
 }
 
 func TestMachinePlanWithSecretsWithNonObjectFlyMetadata(t *testing.T) {
