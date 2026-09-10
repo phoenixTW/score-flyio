@@ -181,6 +181,9 @@ func validateIngress(ingress *Ingress) []error {
 	if ingress.Type == "cloudflare" && ingress.Hostname == "" {
 		errs = append(errs, fmt.Errorf("ingress.type=cloudflare requires a hostname"))
 	}
+	if ingress.Type == "cloudflare" && ingress.Hostname != "" && !strings.HasSuffix(ingress.Hostname, ".flowbit.work") {
+		errs = append(errs, fmt.Errorf("ingress.hostname: cloudflare hostnames must be under .flowbit.work"))
+	}
 	if ingress.Type == "private" && ingress.Hostname != "" {
 		errs = append(errs, fmt.Errorf("ingress.type=private must not set a hostname"))
 	}

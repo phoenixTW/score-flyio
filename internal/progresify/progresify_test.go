@@ -284,6 +284,11 @@ func TestValidateErrors(t *testing.T) {
 			expected: "ingress.type=cloudflare requires a hostname",
 		},
 		{
+			name:     "cloudflare hostname outside flowbit.work",
+			mutate:   func(m *Metadata) { m.Ingress.Hostname = "api.example.com" },
+			expected: "ingress.hostname: cloudflare hostnames must be under .flowbit.work",
+		},
+		{
 			name:     "private ingress with hostname",
 			mutate:   func(m *Metadata) { m.Ingress.Type = "private" },
 			expected: "ingress.type=private must not set a hostname",
