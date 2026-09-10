@@ -391,6 +391,74 @@ func (d *Deployer) WaitForHealthy(ctx context.Context, machineID string, timeout
 	return err
 }
 
+// WaitExit polls a one-off machine until it stops and returns its exit code.
+func (d *Deployer) WaitExit(ctx context.Context, machineID string, timeout time.Duration, interval time.Duration) (int, error) {
+	if timeout <= 0 {
+		timeout = d.config.waitTimeout
+	}
+	if interval <= 0 {
+		interval = d.config.pollInterval
+	}
+	if timeout <= 0 {
+		return -1, fmt.Errorf("machines exit: timeout must be positive")
+	}
+	deadline := d.config.now().Add(timeout)
+	for {
+		machine, found, err := d.GetMachine(ctx, machineID)
+		if err != nil {
+			return -1, err
+		}
+		if found && machine != nil {
+			state := internal.DerefOr(machine.State, "")
+			if state == "destroyed" || state == "stopped" {
+				return d.exitCode(ctx, machineID)
+			}
+		}
+		if err := d.pause(ctx, deadline, interval); err != nil {
+			return -1, err
+		}
+	}
+}
+
+func (d *Deployer) exitCode(ctx context.Context, machineID string) (int, error) {
+	events, err := d.ListEvents(ctx, machineID)
+	if err != nil {
+		return -1, err
+	}
+	best := -1
+	bestStamp := -1
+	for _, event := range events {
+		if internal.DerefOr(event.Type, "") != "exit" || event.Request == nil {
+			continue
+		}
+		raw, ok := (*event.Request)["exit_code"]
+		if !ok {
+			continue
+		}
+		var code int
+		switch value := raw.(type) {
+		case float64:
+			code = int(value)
+		case int:
+			code = value
+		default:
+			continue
+		}
+		stamp := -1
+		if event.Timestamp != nil {
+			stamp = *event.Timestamp
+		}
+		if stamp >= bestStamp {
+			best = code
+			bestStamp = stamp
+		}
+	}
+	if best < 0 {
+		return -1, fmt.Errorf("machines exit: no exit event for machine %s", machineID)
+	}
+	return best, nil
+}
+
 func (d *Deployer) waitForState(ctx context.Context, machineID string, state flymachines.MachinesWaitParamsState, deadline time.Time) (*flymachines.Machine, error) {
 	for {
 		remaining := deadline.Sub(d.config.now())

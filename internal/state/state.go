@@ -55,7 +55,15 @@ type HttpProvisioner struct {
 	Url string `json:"url"`
 }
 
-type WorkloadExtras struct{}
+type WorkloadExtras struct {
+	ReleaseCommandHash string                `yaml:"release_command_hash,omitempty"`
+	ScaleOverrides     map[string]ScaleRange `yaml:"scale_overrides,omitempty"`
+}
+
+type ScaleRange struct {
+	Min int `yaml:"min"`
+	Max int `yaml:"max"`
+}
 
 type ResourceExtras struct{}
 

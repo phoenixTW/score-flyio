@@ -106,6 +106,13 @@ func TestValidateAcceptsHappyPlan(t *testing.T) {
 	assert.NoError(t, happyPlan().Validate())
 }
 
+func TestValidateAcceptsReleaseCommand(t *testing.T) {
+	p := happyPlan()
+	p.ReleaseCommand = []string{"bin/migrate", "up"}
+
+	assert.NoError(t, p.Validate())
+}
+
 func TestValidateAllowsDifferentImagesInOneGroup(t *testing.T) {
 	p := happyPlan()
 	images := make([]string, 0)
@@ -400,6 +407,11 @@ func TestValidateFailures(t *testing.T) {
 			name: "empty metadata key",
 			give: func(p *Plan) { p.Groups[0].Metadata[""] = "value" },
 			want: "metadata keys must not be empty",
+		},
+		{
+			name: "empty release command element",
+			give: func(p *Plan) { p.ReleaseCommand = []string{"bin/migrate", ""} },
+			want: "release_command must not contain empty elements",
 		},
 	}
 	for _, tt := range tests {

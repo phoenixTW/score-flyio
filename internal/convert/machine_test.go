@@ -17,6 +17,7 @@ import (
 func happyWorkloadSpec() scoretypes.Workload {
 	progresifyMeta := map[string]any{
 		"owner":            "platform",
+		"release_command":  []string{"bin/migrate"},
 		"secret_namespace": "ns",
 		"region":           "ams",
 		"ingress":          map[string]any{"type": "cloudflare", "hostname": "api.flowbit.work"},
@@ -141,6 +142,7 @@ func happyPlan() *machineconfig.Plan {
 		RendererVersion: "0.1.0",
 		Workload:        "api",
 		Environment:     "staging",
+		ReleaseCommand:  []string{"bin/migrate"},
 		Groups: []machineconfig.Group{
 			{
 				Name:        "app",
@@ -272,6 +274,17 @@ func TestMachinePlanWithSecretsIsDeterministic(t *testing.T) {
 	assert.NoError(t, secondErr)
 	assert.Equal(t, firstPlan, secondPlan)
 	assert.Equal(t, firstSecrets, secondSecrets)
+}
+
+func TestMachinePlanWithSecretsWithoutReleaseCommand(t *testing.T) {
+	currentState := happyState()
+	meta := currentState.Workloads["api"].Spec.Metadata["progresify"].(map[string]any)
+	delete(meta, "release_command")
+
+	plan, _, err := MachinePlanWithSecrets(currentState, "api", "staging", "0.1.0")
+
+	assert.NoError(t, err)
+	assert.Empty(t, plan.ReleaseCommand)
 }
 
 func TestMachinePlanWithSecretsWithoutProgresify(t *testing.T) {

@@ -299,6 +299,7 @@ func MachinePlanWithSecrets(currentState *state.State, workloadName string, envi
 		RendererVersion: rendererVersion,
 		Workload:        workloadName,
 		Environment:     environment,
+		ReleaseCommand:  pm.ReleaseCommand,
 		Groups:          make([]machineconfig.Group, 0, len(groupNames)),
 	}
 	for _, groupName := range groupNames {

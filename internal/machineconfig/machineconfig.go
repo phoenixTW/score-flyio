@@ -52,11 +52,12 @@ var (
 
 // Plan is the full desired state for one Score workload on Fly Machines.
 type Plan struct {
-	AppName         string  `json:"app_name,omitempty"`
-	RendererVersion string  `json:"renderer_version,omitempty"`
-	Workload        string  `json:"workload,omitempty"`
-	Environment     string  `json:"environment,omitempty"`
-	Groups          []Group `json:"groups"`
+	AppName         string   `json:"app_name,omitempty"`
+	RendererVersion string   `json:"renderer_version,omitempty"`
+	Workload        string   `json:"workload,omitempty"`
+	Environment     string   `json:"environment,omitempty"`
+	ReleaseCommand  []string `json:"release_command,omitempty"`
+	Groups          []Group  `json:"groups"`
 }
 
 // Group is one machine group: colocated containers sharing scale and lifecycle.
@@ -195,6 +196,11 @@ func (p *Plan) Validate() error {
 	}
 	if len(p.Groups) == 0 {
 		return errors.New("groups must not be empty")
+	}
+	for _, part := range p.ReleaseCommand {
+		if part == "" {
+			return errors.New("release_command must not contain empty elements")
+		}
 	}
 	for i := range p.Groups {
 		if i > 0 && p.Groups[i].Name <= p.Groups[i-1].Name {

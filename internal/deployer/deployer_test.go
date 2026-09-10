@@ -228,6 +228,78 @@ func TestListEventsReturnsEvents(t *testing.T) {
 	assert.Equal(t, "e1", internal.DerefOr(events[0].Id, ""))
 }
 
+func TestWaitExitReturnsExitCodeFromLatestExitEvent(t *testing.T) {
+	d := newTestDeployer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/apps/test-app/machines/m1/events" {
+			writeJSON(t, w, http.StatusOK, []flymachines.MachineEvent{
+				{Type: internal.Ref("exit"), Timestamp: internal.Ref(5), Request: &map[string]any{"exit_code": float64(3)}},
+				{Type: internal.Ref("exit"), Timestamp: internal.Ref(9), Request: &map[string]any{"exit_code": float64(0)}},
+			})
+			return
+		}
+		writeJSON(t, w, http.StatusOK, machineJSON("m1", "stopped", nil))
+	})
+	code, err := d.WaitExit(context.Background(), "m1", time.Second, time.Millisecond)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, code)
+}
+
+func TestWaitExitReturnsNonZeroExitCode(t *testing.T) {
+	d := newTestDeployer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/apps/test-app/machines/m1/events" {
+			writeJSON(t, w, http.StatusOK, []flymachines.MachineEvent{{Type: internal.Ref("exit"), Request: &map[string]any{"exit_code": float64(7)}}})
+			return
+		}
+		writeJSON(t, w, http.StatusOK, machineJSON("m1", "destroyed", nil))
+	})
+	code, err := d.WaitExit(context.Background(), "m1", time.Second, time.Millisecond)
+	assert.NoError(t, err)
+	assert.Equal(t, 7, code)
+}
+
+func TestWaitExitPollsUntilMachineStops(t *testing.T) {
+	var calls atomic.Int32
+	d := newTestDeployer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/apps/test-app/machines/m1/events" {
+			writeJSON(t, w, http.StatusOK, []flymachines.MachineEvent{{Type: internal.Ref("exit"), Request: &map[string]any{"exit_code": float64(0)}}})
+			return
+		}
+		state := "starting"
+		if calls.Add(1) >= 3 {
+			state = "stopped"
+		}
+		writeJSON(t, w, http.StatusOK, machineJSON("m1", state, nil))
+	})
+	code, err := d.WaitExit(context.Background(), "m1", 2*time.Second, time.Millisecond)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, code)
+	assert.GreaterOrEqual(t, calls.Load(), int32(3))
+}
+
+func TestWaitExitErrorsWithoutExitEvent(t *testing.T) {
+	d := newTestDeployer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/apps/test-app/machines/m1/events" {
+			writeJSON(t, w, http.StatusOK, []flymachines.MachineEvent{{Type: internal.Ref("start")}})
+			return
+		}
+		writeJSON(t, w, http.StatusOK, machineJSON("m1", "stopped", nil))
+	})
+	code, err := d.WaitExit(context.Background(), "m1", time.Second, time.Millisecond)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no exit event")
+	assert.Equal(t, -1, code)
+}
+
+func TestWaitExitTimesOutWhileMachineRuns(t *testing.T) {
+	d := newTestDeployer(t, func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, http.StatusOK, machineJSON("m1", "started", nil))
+	})
+	code, err := d.WaitExit(context.Background(), "m1", 150*time.Millisecond, 10*time.Millisecond)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "timed out")
+	assert.Equal(t, -1, code)
+}
+
 func TestWaitForStateReturnsWhenStateMatchesImmediately(t *testing.T) {
 	d := newTestDeployer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || (r.URL.Path != "/apps/test-app/machines/m1/wait" && r.URL.Path != "/apps/test-app/machines/m1") {

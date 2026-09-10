@@ -23,6 +23,7 @@ type Options struct {
 	StateTimeout  time.Duration
 	HealthTimeout time.Duration
 	HealthPoll    time.Duration
+	SkipRelease   bool
 }
 
 func (o Options) withDefaults() Options {
@@ -71,6 +72,11 @@ func Apply(ctx context.Context, d *deployer.Deployer, desired *machineconfig.Pla
 	result, err := Plan(ctx, d, desired)
 	if err != nil {
 		return nil, err
+	}
+	if !options.SkipRelease {
+		if err := runReleaseCommand(ctx, d, desired, options); err != nil {
+			return nil, fmt.Errorf("apply failed: %w", err)
+		}
 	}
 	created := make([]string, 0)
 	rollback := func(cause error) (*Result, error) {
@@ -175,4 +181,49 @@ func configWithHash(group machineconfig.Group, hash string) flymachines.FlyMachi
 	metadata[planner.MetadataHash] = hash
 	group.Metadata = metadata
 	return group.ToFlyMachineConfig()
+}
+
+const releaseGroupName = "release"
+
+func runReleaseCommand(ctx context.Context, d *deployer.Deployer, desired *machineconfig.Plan, options Options) error {
+	if len(desired.ReleaseCommand) == 0 || len(desired.Groups) == 0 {
+		return nil
+	}
+	group := desired.Groups[0]
+	machine, err := d.CreateMachine(ctx, desired.Workload+"-release", group.Region, releaseMachineConfig(group))
+	if err != nil {
+		return err
+	}
+	if machine == nil || machine.Id == nil || *machine.Id == "" {
+		return fmt.Errorf("release machine create returned no machine id")
+	}
+	machineID := *machine.Id
+	var cleanupErr error
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		cleanupErr = d.DeleteMachine(cleanupCtx, machineID, true)
+	}()
+	code, err := d.WaitExit(ctx, machineID, options.HealthTimeout, options.HealthPoll)
+	if err != nil {
+		return errors.Join(fmt.Errorf("release command: %w", err), cleanupErr)
+	}
+	if code != 0 {
+		return errors.Join(fmt.Errorf("release command exited with code %d", code), cleanupErr)
+	}
+	return cleanupErr
+}
+
+func releaseMachineConfig(group machineconfig.Group) flymachines.FlyMachineConfig {
+	metadata := make(map[string]string, len(group.Metadata)+1)
+	for key, value := range group.Metadata {
+		metadata[key] = value
+	}
+	metadata[planner.MetadataGroup] = releaseGroupName
+	release := group
+	release.Restart = machineconfig.RestartPolicyNo
+	release.Services = nil
+	release.Checks = nil
+	release.Metadata = metadata
+	return release.ToFlyMachineConfig()
 }
