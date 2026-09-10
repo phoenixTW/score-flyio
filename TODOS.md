@@ -50,16 +50,16 @@ deployment; `fly.toml` is retained only as an optional legacy compatibility path
 
 - [x] Keep compatibility with `init`, `generate`, `--deploy`, `--secrets-file`,
       overrides, and provisioner commands.
-- [ ] Add explicit `validate`, `plan`, `apply`, `status`, `logs`, `reconcile`,
+- [x] Add explicit `validate`, `plan`, `apply`, `status`, `logs`, `reconcile`,
       `scale`, and `destroy` commands.
 - [x] Add `--dry-run` and machine-readable JSON plan output.
 - [x] Include renderer version, workload, environment, machine group, and image
       digest in plan output and Fly machine metadata.
-- [ ] Add state schema versioning and migration from existing
+- [x] Add state schema versioning and migration from existing
       `.score-flyio/state.yaml`.
 - [ ] Add remote state support or a documented CI artifact strategy.
-- [ ] Add state locking to prevent concurrent CI deployments.
-- [ ] Redact secrets from state diagnostics, plans, logs, and errors.
+- [x] Add state locking to prevent concurrent CI deployments.
+- [x] Redact secrets from state diagnostics, plans, logs, and errors.
 - [x] Make deprovisioning safe and explicit; detect orphaned machines before
       deleting anything.
 
@@ -84,7 +84,7 @@ deployment; `fly.toml` is retained only as an optional legacy compatibility path
 - [ ] Validate the staging hostname (`flowbit.work`) and tunnel route before
       apply.
 - [ ] Inject the tunnel token from Infisical, never from repository files.
-- [ ] Add a post-deploy check for Tunnel connector health and API reachability.
+- [x] Add a post-deploy check for Tunnel connector health and API reachability.
 - [ ] Verify direct Fly origin access is impossible for public staging API.
 - [ ] Verify internal service URLs resolve only over the private network.
 
@@ -93,9 +93,9 @@ deployment; `fly.toml` is retained only as an optional legacy compatibility path
 - [x] Map Score probes to Fly machine/service checks, preserving method, path,
       headers, interval, timeout, and grace period.
 - [x] Support per-group VM size, region, minimum, and maximum machine counts.
-- [ ] Support scale-to-zero and resume for staging workers.
-- [ ] Support release commands with exactly-once and failure-stop semantics.
-- [ ] Surface Fly machine events, container exits, failed checks, and deployment
+- [x] Support scale-to-zero and resume for staging workers.
+- [x] Support release commands with exactly-once and failure-stop semantics.
+- [x] Surface Fly machine events, container exits, failed checks, and deployment
       diffs in CLI output.
 - [ ] Add structured deployment logs and correlation IDs.
 - [ ] Add metrics configuration for each service where requested.
