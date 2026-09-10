@@ -6,73 +6,73 @@ deployment; `fly.toml` is retained only as an optional legacy compatibility path
 
 ## P0 — deployment blocker
 
-- [ ] Replace the single-container guard in `internal/convert/convert.go` with a
+- [x] Replace the single-container guard in `internal/convert/convert.go` with a
       typed multi-container model.
-- [ ] Extend `internal/appconfig` (or introduce `internal/machineconfig`) to
+- [x] Extend `internal/appconfig` (or introduce `internal/machineconfig`) to
       represent Fly Machines API configuration:
       `containers[]`, per-container image/command/args/env/files/mounts/restart,
       machine guest resources, services, checks, region, and lifecycle policy.
-- [ ] Preserve container names and reject duplicate, empty, or invalid names.
-- [ ] Define and validate colocation semantics: containers in one machine share
+- [x] Preserve container names and reject duplicate, empty, or invalid names.
+- [x] Define and validate colocation semantics: containers in one machine share
       scale and lifecycle; independently scaled processes must be separate groups
       or applications.
-- [ ] Support different images in one machine (required by API `cloudflared`).
-- [ ] Add a deterministic mapping from Score containers and
+- [x] Support different images in one machine (required by API `cloudflared`).
+- [x] Add a deterministic mapping from Score containers and
       `metadata.progresify.processes` to machine groups.
-- [ ] Add a Machines API deployer using the existing generated client in
+- [x] Add a Machines API deployer using the existing generated client in
       `internal/flymachines`:
       create, inspect, update, wait, stop, suspend, restart, delete, and list.
-- [ ] Implement idempotent reconciliation. Re-running apply with the same plan
+- [x] Implement idempotent reconciliation. Re-running apply with the same plan
       must produce no unnecessary machine replacement.
-- [ ] Add partial-failure recovery and rollback behavior.
-- [ ] Wait for machine and health-check readiness; do not report success after
+- [x] Add partial-failure recovery and rollback behavior.
+- [x] Wait for machine and health-check readiness; do not report success after
       only receiving a successful API response.
-- [ ] Make `generate --deploy` use the Machines API when the workload requires
+- [x] Make `generate --deploy` use the Machines API when the workload requires
       multi-container support. Never silently fall back to an invalid TOML plan.
 
 ## P0 — Angada topology contract
 
-- [ ] Add typed support for the `metadata.progresify` contract used by
+- [x] Add typed support for the `metadata.progresify` contract used by
       `platform-score-apps`: owner, Slack channel, secret namespace, region,
       ingress, release command, variables, processes, VM, scale, HTTP service,
       concurrency, and checks.
-- [ ] Validate that every declared process has exactly one matching Score
+- [x] Validate that every declared process has exactly one matching Score
       container and that no container is left unconfigured.
-- [ ] Support API `app`, `worker`, and `cloudflared` as distinct containers.
+- [x] Support API `app`, `worker`, and `cloudflared` as distinct containers.
 - [ ] Support review and wiki app/worker topology with explicit machine-group
       behavior.
-- [ ] Enforce private ingress for internal services and Cloudflare-only ingress
+- [x] Enforce private ingress for internal services and Cloudflare-only ingress
       for public staging API traffic.
 - [ ] Reject production credentials, public Fly services, mutable image tags, or
       staging scale values that violate the thin-staging policy.
 
 ## P1 — Score CLI and state compatibility
 
-- [ ] Keep compatibility with `init`, `generate`, `--deploy`, `--secrets-file`,
+- [x] Keep compatibility with `init`, `generate`, `--deploy`, `--secrets-file`,
       overrides, and provisioner commands.
 - [ ] Add explicit `validate`, `plan`, `apply`, `status`, `logs`, `reconcile`,
       `scale`, and `destroy` commands.
-- [ ] Add `--dry-run` and machine-readable JSON plan output.
-- [ ] Include renderer version, workload, environment, machine group, and image
+- [x] Add `--dry-run` and machine-readable JSON plan output.
+- [x] Include renderer version, workload, environment, machine group, and image
       digest in plan output and Fly machine metadata.
 - [ ] Add state schema versioning and migration from existing
       `.score-flyio/state.yaml`.
 - [ ] Add remote state support or a documented CI artifact strategy.
 - [ ] Add state locking to prevent concurrent CI deployments.
 - [ ] Redact secrets from state diagnostics, plans, logs, and errors.
-- [ ] Make deprovisioning safe and explicit; detect orphaned machines before
+- [x] Make deprovisioning safe and explicit; detect orphaned machines before
       deleting anything.
 
 ## P1 — images, secrets, and resources
 
-- [ ] Require prebuilt, registry-accessible images for Machines API deployment.
-- [ ] Resolve and record immutable image digests; reject `latest` in release
+- [x] Require prebuilt, registry-accessible images for Machines API deployment.
+- [x] Resolve and record immutable image digests; reject `latest` in release
       environments.
 - [ ] Validate architecture (staging and production currently require amd64).
-- [ ] Keep Score resource provisioners and substitutions working for every
+- [x] Keep Score resource provisioners and substitutions working for every
       container, including secret access tracking.
 - [ ] Add an Infisical provisioner/adapter with per-environment namespaces.
-- [ ] Ensure secrets are injected at deploy time and are never serialized into
+- [x] Ensure secrets are injected at deploy time and are never serialized into
       generated manifests or logs.
 - [ ] Support secret rotation without rebuilding images.
 - [ ] Test that staging database, R2, GitHub App, Slack, Daytona, Hatchet, and
@@ -80,7 +80,7 @@ deployment; `fly.toml` is retained only as an optional legacy compatibility path
 
 ## P1 — networking and Cloudflare
 
-- [ ] Model Cloudflare Tunnel attachment and hostname in deployment values.
+- [x] Model Cloudflare Tunnel attachment and hostname in deployment values.
 - [ ] Validate the staging hostname (`flowbit.work`) and tunnel route before
       apply.
 - [ ] Inject the tunnel token from Infisical, never from repository files.
@@ -90,9 +90,9 @@ deployment; `fly.toml` is retained only as an optional legacy compatibility path
 
 ## P1 — lifecycle, health, and observability
 
-- [ ] Map Score probes to Fly machine/service checks, preserving method, path,
+- [x] Map Score probes to Fly machine/service checks, preserving method, path,
       headers, interval, timeout, and grace period.
-- [ ] Support per-group VM size, region, minimum, and maximum machine counts.
+- [x] Support per-group VM size, region, minimum, and maximum machine counts.
 - [ ] Support scale-to-zero and resume for staging workers.
 - [ ] Support release commands with exactly-once and failure-stop semantics.
 - [ ] Surface Fly machine events, container exits, failed checks, and deployment
@@ -102,9 +102,9 @@ deployment; `fly.toml` is retained only as an optional legacy compatibility path
 
 ## P1 — tests and acceptance gates
 
-- [ ] Add unit tests for every Score-to-Machine field and invalid combination.
+- [x] Add unit tests for every Score-to-Machine field and invalid combination.
 - [ ] Add golden JSON fixtures for API, review, wiki, LiteLLM, and Hatchet.
-- [ ] Add mocked Machines API contract tests for create/update/reconcile/rollback.
+- [x] Add mocked Machines API contract tests for create/update/reconcile/rollback.
 - [ ] Add idempotency, orphan cleanup, secret redaction, and scale-to-zero tests.
 - [ ] Add a local E2E profile with fake GitHub, LLM, OCR, Hatchet, Daytona, R2,
       Slack, and Cloudflare services and zero cloud spend.

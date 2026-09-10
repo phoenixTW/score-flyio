@@ -271,7 +271,7 @@ func doHttpRequest(h *state.HttpProvisioner, method string, inputs ProvisionerIn
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	bod, _ := io.ReadAll(res.Body)
 	if res.StatusCode >= 300 {
 		return bod, fmt.Errorf("http provision request failed with status: %d %s: '%s'", res.StatusCode, res.Status, string(bod))

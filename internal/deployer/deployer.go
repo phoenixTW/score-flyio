@@ -17,9 +17,8 @@ const (
 	maxWaitRequestSec   = 60
 )
 
-// RetryPolicy controls retries for operations that are safe to repeat.
-// CreateMachine and CreateApp are deliberately never retried because a
-// successful request may have created a resource before its response was lost.
+// RetryPolicy controls retries for safely repeatable operations. Creates
+// are never retried: a lost response may still have created the resource.
 type RetryPolicy struct {
 	MaxAttempts int
 	Backoff     time.Duration
@@ -40,8 +39,8 @@ type config struct {
 	sleep        func(context.Context, time.Duration) error
 }
 
-// Option customizes a Deployer. Options are primarily useful for deterministic
-// tests and for callers that need a different bounded polling policy.
+// Option customizes a Deployer for deterministic tests and alternate
+// bounded polling policies.
 type Option func(*config)
 
 // WithRetryPolicy configures retries for safe operations.
@@ -93,9 +92,8 @@ type Deployer struct {
 	config  config
 }
 
-// MachinesAPI is the deployer seam used by higher-level reconciliation code.
-// Deployer is the HTTP adapter; callers can substitute a fake implementation
-// without depending on the generated client.
+// MachinesAPI is the deployer seam used by reconciliation code. Deployer is
+// the HTTP adapter; callers can substitute a fake implementation.
 type MachinesAPI interface {
 	ListMachines(context.Context) ([]flymachines.Machine, error)
 	GetMachine(context.Context, string) (*flymachines.Machine, bool, error)
@@ -368,9 +366,8 @@ func (d *Deployer) RestartMachineWithParams(ctx context.Context, machineID strin
 	return actionResult("machines restart", resp, err)
 }
 
-// WaitForState waits for the generated wait endpoint and verifies the state by
-// inspecting the machine. The endpoint's successful response is not treated
-// as proof of readiness by itself.
+// WaitForState waits via the wait endpoint and verifies state by inspecting
+// the machine; a successful endpoint response alone is not readiness proof.
 func (d *Deployer) WaitForState(ctx context.Context, machineID string, state flymachines.MachinesWaitParamsState, timeout time.Duration) error {
 	if timeout <= 0 {
 		return fmt.Errorf("machines wait: timeout must be positive")

@@ -105,7 +105,7 @@ var (
 		dbUser, _ := inputs.ResourceState["username"].(string)
 		dbPassword, _ := inputs.ResourceState["password"].(string)
 		if !ok {
-			dbName = strings.Replace(inputs.ResourceId, ".", "-", -1) + strconv.Itoa(1000+rand2.Intn(9000))
+			dbName = strings.ReplaceAll(inputs.ResourceId, ".", "-") + strconv.Itoa(1000+rand2.Intn(9000))
 			dbUser = dbName + "-user"
 			passwordBytes := make([]byte, 10)
 			_, _ = rand.Read(passwordBytes)

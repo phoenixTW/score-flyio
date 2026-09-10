@@ -348,7 +348,7 @@ func runMachineStatus(cmd *cobra.Command, args []string) error {
 	}
 	client, err := newMachinesClient()
 	if err != nil {
-		return fmt.Errorf("Fly client is not configured for machine status")
+		return fmt.Errorf("fly client is not configured for machine status")
 	}
 	machines, err := deployer.New(client, input.plan.AppName).ListMachines(cmd.Context())
 	if err != nil {

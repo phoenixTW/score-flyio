@@ -39,9 +39,8 @@ type MachineChange struct {
 	RequiresReplacement bool     `json:"requires_replacement"`
 }
 
-// Diff compares desired groups to live machines. Adoption uses the stable
-// progresify.group metadata, while the config hash makes a repeated apply a
-// no-op even when Fly assigns a different machine ID.
+// Diff compares desired groups to live machines using stable group
+// metadata and a config hash so repeated applies are no-ops.
 func Diff(desired *machineconfig.Plan, live []flymachines.Machine) ([]MachineChange, error) {
 	if desired == nil {
 		return nil, fmt.Errorf("desired plan must not be nil")

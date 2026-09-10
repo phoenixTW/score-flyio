@@ -209,9 +209,8 @@ func (p *Plan) Validate() error {
 	return nil
 }
 
-// ValidateImmutableImages enforces the release-time image contract. Structural
-// validation remains separate so conversion can be tested before registry
-// resolution, while validate/plan/apply call this gate before mutation.
+// ValidateImmutableImages enforces the release-time image contract.
+// Structural validation stays separate; mutation paths call this gate.
 func (p *Plan) ValidateImmutableImages() error {
 	if p == nil {
 		return errors.New("plan must not be nil")

@@ -31,7 +31,7 @@ func NewFlyClient() (*FlyClient, error) {
 		return nil
 	}))
 	if err != nil {
-		return nil, fmt.Errorf("Failed to setup client: %w", err)
+		return nil, fmt.Errorf("failed to setup client: %w", err)
 	}
 	return &FlyClient{ClientWithResponsesInterface: c, ApiToken: token}, nil
 }
