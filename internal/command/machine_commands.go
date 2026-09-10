@@ -7,10 +7,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
+	"net/http"
 	"os"
 	"os/exec"
 	"slices"
 	"sort"
+	"strings"
+	"time"
 
 	scoreloader "github.com/score-spec/score-go/loader"
 	scoreschema "github.com/score-spec/score-go/schema"
@@ -49,6 +53,13 @@ var newMachinesClient = flymachines.NewFlyClient
 
 var execFly = func(args []string, stdout, stderr io.Writer) error {
 	flyCommand := exec.Command("fly", args...)
+	flyCommand.Stdout, flyCommand.Stderr = stdout, stderr
+	return flyCommand.Run()
+}
+
+var execFlyWithInput = func(args []string, stdin string, stdout, stderr io.Writer) error {
+	flyCommand := exec.Command("fly", args...)
+	flyCommand.Stdin = strings.NewReader(stdin)
 	flyCommand.Stdout, flyCommand.Stderr = stdout, stderr
 	return flyCommand.Run()
 }
@@ -215,6 +226,7 @@ func applyMachinePlanLive(cmd *cobra.Command, input *machineInput) error {
 			return err
 		}
 	}
+	runTunnelHealthCheck(cmd, input.plan)
 	return writeMachineJSON(cmd, outputFor(input, result.Changes))
 }
 
@@ -530,14 +542,52 @@ func setMachineSecrets(cmd *cobra.Command, token, app string, secrets map[string
 	if len(secrets) == 0 {
 		return nil
 	}
-	args := []string{"secrets", "set", "--access-token", token, "--app", app, "--stage"}
-	for key, secret := range secrets {
-		args = append(args, fmt.Sprintf("%s=%s", key, secret))
+	keys := slices.Sorted(maps.Keys(secrets))
+	lines := make([]string, 0, len(keys))
+	for _, key := range keys {
+		lines = append(lines, fmt.Sprintf("%s=%s", key, secrets[key]))
 	}
-	if err := execFly(args, cmd.ErrOrStderr(), cmd.ErrOrStderr()); err != nil {
+	args := []string{"secrets", "set", "--access-token", token, "--app", app, "--stage", "-i"}
+	if err := execFlyWithInput(args, strings.Join(lines, "\n")+"\n", cmd.ErrOrStderr(), cmd.ErrOrStderr()); err != nil {
 		return fmt.Errorf("failed to set machine secrets: %w", err)
 	}
 	return nil
+}
+
+var tunnelHealthCheckURL = func(hostname string) (string, bool) {
+	return "https://" + hostname, true
+}
+
+func runTunnelHealthCheck(cmd *cobra.Command, plan *machineconfig.Plan) {
+	if plan.Environment != "staging" {
+		return
+	}
+	for i := range plan.Groups {
+		group := plan.Groups[i]
+		if !slices.ContainsFunc(group.Containers, func(c machineconfig.Container) bool { return c.Name == "cloudflared" }) {
+			continue
+		}
+		hostname := group.Metadata[machineconfig.MetadataIngressHostname]
+		if hostname == "" {
+			continue
+		}
+		checkTunnelHost(cmd, hostname)
+		return
+	}
+}
+
+func checkTunnelHost(cmd *cobra.Command, hostname string) {
+	url, enabled := tunnelHealthCheckURL(hostname)
+	if !enabled {
+		return
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	response, err := client.Get(url)
+	if err != nil {
+		cmd.PrintErrln(fmt.Sprintf("warning: tunnel health check failed for %s: %v", hostname, err))
+		return
+	}
+	response.Body.Close()
 }
 
 func runMachineReconcile(cmd *cobra.Command, args []string) error {
