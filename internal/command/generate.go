@@ -32,8 +32,11 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/astromechza/score-flyio/internal/convert"
+	"github.com/astromechza/score-flyio/internal/deployer"
 	"github.com/astromechza/score-flyio/internal/flymachines"
+	"github.com/astromechza/score-flyio/internal/progresify"
 	"github.com/astromechza/score-flyio/internal/provisioners"
+	"github.com/astromechza/score-flyio/internal/reconcile"
 	"github.com/astromechza/score-flyio/internal/state"
 )
 
@@ -143,6 +146,43 @@ var generateCmd = &cobra.Command{
 
 		flyAppName := currentState.Extras.AppPrefix + workloadName
 		flyAppToml := fmt.Sprintf("fly_%s.toml", workloadName)
+		mustDeploy, _ := cmd.Flags().GetBool(generateCmdDeployFlag)
+
+		if machinePlan, machineSecrets, machineErr := convert.MachinePlanWithSecrets(currentState, workloadName, "staging", rootCmd.Version); machineErr != nil {
+			if _, declared := workload.Metadata[progresify.MetadataKey]; declared {
+				return fmt.Errorf("failed to convert machine plan: %w", machineErr)
+			}
+		} else if machinePlan != nil {
+			if err := machinePlan.ValidateImmutableImages(); err != nil {
+				return err
+			}
+			if !mustDeploy {
+				return fmt.Errorf("workload %q requires the Machines API path; use plan/apply or generate --deploy", workloadName)
+			}
+			client, err := flymachines.NewFlyClient()
+			if err != nil {
+				return fmt.Errorf("failed to setup deploy client: %w", err)
+			}
+			machineDeployer := deployer.New(client, flyAppName)
+			if _, err := machineDeployer.EnsureApp(cmd.Context(), flymachines.CreateAppRequest{AppName: &flyAppName}); err != nil {
+				return fmt.Errorf("failed to ensure app: %w", err)
+			}
+			if len(machineSecrets) > 0 {
+				args := []string{"secrets", "set", "--access-token", client.ApiToken, "--app", flyAppName, "--stage"}
+				for key, value := range machineSecrets {
+					args = append(args, fmt.Sprintf("%s=%s", key, value))
+				}
+				secretCommand := exec.Command("fly", args...)
+				secretCommand.Stderr, secretCommand.Stdout = cmd.ErrOrStderr(), cmd.OutOrStdout()
+				if err := secretCommand.Run(); err != nil {
+					return fmt.Errorf("failed to set machine secrets: %w", err)
+				}
+			}
+			if _, err := reconcile.Apply(cmd.Context(), machineDeployer, machinePlan, reconcile.Options{}); err != nil {
+				return err
+			}
+			return nil
+		}
 
 		if manifest, secrets, err := convert.Workload(currentState, workloadName); err != nil {
 			return fmt.Errorf("failed to convert workloads: %w", err)
@@ -159,8 +199,6 @@ var generateCmd = &cobra.Command{
 				return fmt.Errorf("%s: failed to rename tempfile: %w", workloadName, err)
 			}
 			slog.Info("Wrote app manifest to file", slog.String("app", flyAppName), slog.String("file", flyAppToml))
-
-			mustDeploy, _ := cmd.Flags().GetBool(generateCmdDeployFlag)
 
 			if x, _ := cmd.Flags().GetString(generateCmdEnvSecretsFlag); x != "" {
 				if err := writeSecretsFile(secrets, x); err != nil {

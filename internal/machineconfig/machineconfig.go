@@ -47,6 +47,7 @@ var (
 	containerNameRegexp = regexp.MustCompile(ContainerNamePattern)
 	regionRegexp        = regexp.MustCompile(`^[a-z]{2,4}$`)
 	signalRegexp        = regexp.MustCompile(`^SIG[A-Z]+$`)
+	imageDigestRegexp   = regexp.MustCompile(`^sha256:[0-9a-fA-F]{64}$`)
 )
 
 // Plan is the full desired state for one Score workload on Fly Machines.
@@ -208,6 +209,23 @@ func (p *Plan) Validate() error {
 	return nil
 }
 
+// ValidateImmutableImages enforces the release-time image contract. Structural
+// validation remains separate so conversion can be tested before registry
+// resolution, while validate/plan/apply call this gate before mutation.
+func (p *Plan) ValidateImmutableImages() error {
+	if p == nil {
+		return errors.New("plan must not be nil")
+	}
+	for _, group := range p.Groups {
+		for _, container := range group.Containers {
+			if container.ImageDigest == "" || !imageDigestRegexp.MatchString(container.ImageDigest) || !strings.Contains(container.Image, "@"+container.ImageDigest) {
+				return fmt.Errorf("group %s container %s: image must be pinned to an immutable sha256 digest", group.Name, container.Name)
+			}
+		}
+	}
+	return nil
+}
+
 func (g *Group) validate(path string) error {
 	if err := ValidateContainerName(g.Name); err != nil {
 		return fmt.Errorf("%s: %w", path, err)
@@ -260,6 +278,9 @@ func (g *Group) validate(path string) error {
 		return fmt.Errorf("%s: containers must not be empty", path)
 	}
 	containerNames := make(map[string]bool, len(g.Containers))
+	for _, c := range g.Containers {
+		containerNames[c.Name] = true
+	}
 	for i := range g.Containers {
 		c := &g.Containers[i]
 		if i > 0 && c.Name <= g.Containers[i-1].Name {
@@ -268,7 +289,6 @@ func (g *Group) validate(path string) error {
 		if err := ValidateContainerName(c.Name); err != nil {
 			return fmt.Errorf("%s: containers[%d]: %w", path, i, err)
 		}
-		containerNames[c.Name] = true
 		if c.Image == "" {
 			return fmt.Errorf("%s: containers[%d] image must not be empty", path, i)
 		}

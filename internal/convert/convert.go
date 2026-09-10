@@ -34,6 +34,7 @@ import (
 	scoretypes "github.com/score-spec/score-go/types"
 
 	"github.com/astromechza/score-flyio/internal/appconfig"
+	"github.com/astromechza/score-flyio/internal/progresify"
 	"github.com/astromechza/score-flyio/internal/provisioners"
 	"github.com/astromechza/score-flyio/internal/state"
 )
@@ -73,13 +74,23 @@ const annotationPrefix = "score-flyio.astromechza.github.com/"
 var annotationReg = regexp.MustCompile(`^service-([^-]+)-(handlers|auto-stop|min-running|http-options|concurrency)$`)
 
 func Workload(currentState *state.State, workloadName string) (*appconfig.AppConfig, map[string]string, error) {
+	workload, ok := currentState.Workloads[workloadName]
+	if !ok {
+		return nil, nil, fmt.Errorf("workload '%s': does not exist", workloadName)
+	}
+	if _, ok := workload.Spec.Metadata[progresify.MetadataKey]; ok {
+		return nil, nil, fmt.Errorf("metadata.%s workloads require machine plan conversion", progresify.MetadataKey)
+	}
+	if len(workload.Spec.Containers) != 1 {
+		return nil, nil, fmt.Errorf("multi-container workloads require metadata.%s machine plan conversion", progresify.MetadataKey)
+	}
+
 	resOutputs, err := currentState.GetResourceOutputForWorkload(workloadName)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to generate outputs: %w", err)
 	}
-	sf := framework.BuildSubstitutionFunction(currentState.Workloads[workloadName].Spec.Metadata, resOutputs)
+	sf := framework.BuildSubstitutionFunction(workload.Spec.Metadata, resOutputs)
 
-	workload := currentState.Workloads[workloadName]
 	workloadAnnotations, _ := workload.Spec.Metadata["annotations"].(map[string]interface{})
 	for s := range workloadAnnotations {
 		if strings.HasPrefix(s, annotationPrefix) {
@@ -95,9 +106,6 @@ func Workload(currentState *state.State, workloadName string) (*appconfig.AppCon
 
 	outputSecrets := make(map[string]string)
 
-	if len(workload.Spec.Containers) != 1 {
-		return nil, nil, fmt.Errorf("containers: only 1 container per workload is supported until Fly multi-container support is released")
-	}
 	containerName, container, _ := anyFromMap(workload.Spec.Containers)
 	if container.Image == "." {
 		if f := currentState.Workloads[workloadName].File; f != nil {

@@ -117,6 +117,19 @@ func TestValidateAllowsDifferentImagesInOneGroup(t *testing.T) {
 	assert.NoError(t, p.Validate())
 }
 
+func TestValidateImmutableImagesRequiresMatchingDigestReferences(t *testing.T) {
+	p := happyPlan()
+	p.Groups[0].Containers[0].Image = "ghcr.io/progresify/api@sha256:" + strings.Repeat("a", 64)
+	p.Groups[0].Containers[0].ImageDigest = "sha256:" + strings.Repeat("a", 64)
+	p.Groups[0].Containers[1].Image = "cloudflare/cloudflared@sha256:" + strings.Repeat("b", 64)
+	p.Groups[0].Containers[1].ImageDigest = "sha256:" + strings.Repeat("b", 64)
+	p.Groups[0].Containers[2].Image = "ghcr.io/progresify/worker@sha256:" + strings.Repeat("c", 64)
+	p.Groups[0].Containers[2].ImageDigest = "sha256:" + strings.Repeat("c", 64)
+	assert.NoError(t, p.ValidateImmutableImages())
+	p.Groups[0].Containers[0].ImageDigest = ""
+	assert.ErrorContains(t, p.ValidateImmutableImages(), "must be pinned to an immutable sha256 digest")
+}
+
 func unique(in []string) []string {
 	seen := make(map[string]bool)
 	out := make([]string, 0)
