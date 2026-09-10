@@ -55,11 +55,11 @@ func happyGroup() Group {
 			},
 		},
 		Metrics:  &Metrics{Https: true, Path: "/metrics", Port: 9090},
-		Metadata: map[string]string{"progresify.group": "app"},
+		Metadata: map[string]string{"flydeploy.group": "app"},
 		Containers: []Container{
 			{
 				Name:    "api",
-				Image:   "ghcr.io/progresify/api:sha-abc",
+				Image:   "ghcr.io/example/api:sha-abc",
 				Command: []string{"./api"},
 				Args:    []string{"serve", "--port", "8080"},
 				Env:     map[string]string{"NODE_ENV": "production"},
@@ -67,13 +67,13 @@ func happyGroup() Group {
 				Mounts:  []Mount{{Volume: "data", Path: "/data"}},
 			},
 			{
-				Name:      "cloudflared",
-				Image:     "cloudflare/cloudflared:2024.10.0",
+				Name:      "sidecar",
+				Image:     "example/sidecar:2024.10.0",
 				DependsOn: []Dependency{{Name: "api", Condition: DependencyConditionHealthy}},
 			},
 			{
 				Name:    "worker",
-				Image:   "ghcr.io/progresify/worker:sha-def",
+				Image:   "ghcr.io/example/worker:sha-def",
 				Restart: RestartPolicyNo,
 			},
 		},
@@ -92,7 +92,7 @@ func happyPlan() *Plan {
 
 func TestValidateContainerNameAcceptsAndRejects(t *testing.T) {
 	assert.NoError(t, ValidateContainerName("api"))
-	assert.NoError(t, ValidateContainerName("cloudflared"))
+	assert.NoError(t, ValidateContainerName("sidecar"))
 	assert.NoError(t, ValidateContainerName("a"))
 	assert.NoError(t, ValidateContainerName("a-b-2"))
 	assert.ErrorContains(t, ValidateContainerName(""), "container name must not be empty")
@@ -126,11 +126,11 @@ func TestValidateAllowsDifferentImagesInOneGroup(t *testing.T) {
 
 func TestValidateImmutableImagesRequiresMatchingDigestReferences(t *testing.T) {
 	p := happyPlan()
-	p.Groups[0].Containers[0].Image = "ghcr.io/progresify/api@sha256:" + strings.Repeat("a", 64)
+	p.Groups[0].Containers[0].Image = "ghcr.io/example/api@sha256:" + strings.Repeat("a", 64)
 	p.Groups[0].Containers[0].ImageDigest = "sha256:" + strings.Repeat("a", 64)
-	p.Groups[0].Containers[1].Image = "cloudflare/cloudflared@sha256:" + strings.Repeat("b", 64)
+	p.Groups[0].Containers[1].Image = "example/sidecar@sha256:" + strings.Repeat("b", 64)
 	p.Groups[0].Containers[1].ImageDigest = "sha256:" + strings.Repeat("b", 64)
-	p.Groups[0].Containers[2].Image = "ghcr.io/progresify/worker@sha256:" + strings.Repeat("c", 64)
+	p.Groups[0].Containers[2].Image = "ghcr.io/example/worker@sha256:" + strings.Repeat("c", 64)
 	p.Groups[0].Containers[2].ImageDigest = "sha256:" + strings.Repeat("c", 64)
 	assert.NoError(t, p.ValidateImmutableImages())
 	p.Groups[0].Containers[0].ImageDigest = ""
@@ -210,6 +210,16 @@ func TestValidateFailures(t *testing.T) {
 			name: "lowercase stop signal",
 			give: func(p *Plan) { p.Groups[0].StopSignal = "sigterm" },
 			want: "stop_signal",
+		},
+		{
+			name: "guest cpu kind invalid",
+			give: func(p *Plan) { p.Groups[0].Guest.CpuKind = "burst" },
+			want: "guest cpu_kind 'burst' must be shared or performance",
+		},
+		{
+			name: "guest cpu arch invalid",
+			give: func(p *Plan) { p.Groups[0].Guest.CpuArch = "riscv" },
+			want: "guest cpu_arch 'riscv' must be amd64 or arm64",
 		},
 		{
 			name: "guest cpus too low",
@@ -320,7 +330,7 @@ func TestValidateFailures(t *testing.T) {
 		},
 		{
 			name: "depends on self",
-			give: func(p *Plan) { p.Groups[0].Containers[1].DependsOn[0].Name = "cloudflared" },
+			give: func(p *Plan) { p.Groups[0].Containers[1].DependsOn[0].Name = "sidecar" },
 			want: "must not reference itself",
 		},
 		{
@@ -433,7 +443,7 @@ func TestToFlyMachineConfigMapsAllFields(t *testing.T) {
 		Containers: &[]flymachines.FlyContainerConfig{
 			{
 				Name:       internal.Ref("api"),
-				Image:      internal.Ref("ghcr.io/progresify/api:sha-abc"),
+				Image:      internal.Ref("ghcr.io/example/api:sha-abc"),
 				Entrypoint: &[]string{"./api"},
 				Cmd:        &[]string{"serve", "--port", "8080"},
 				Env:        &map[string]string{"NODE_ENV": "production"},
@@ -445,15 +455,15 @@ func TestToFlyMachineConfigMapsAllFields(t *testing.T) {
 				},
 			},
 			{
-				Name:  internal.Ref("cloudflared"),
-				Image: internal.Ref("cloudflare/cloudflared:2024.10.0"),
+				Name:  internal.Ref("sidecar"),
+				Image: internal.Ref("example/sidecar:2024.10.0"),
 				DependsOn: &[]flymachines.FlyContainerDependency{
 					{Name: internal.Ref("api"), Condition: internal.Ref(flymachines.FlyContainerDependencyConditionHealthy)},
 				},
 			},
 			{
 				Name:    internal.Ref("worker"),
-				Image:   internal.Ref("ghcr.io/progresify/worker:sha-def"),
+				Image:   internal.Ref("ghcr.io/example/worker:sha-def"),
 				Restart: &flymachines.FlyMachineRestart{Policy: internal.Ref(flymachines.FlyMachineRestartPolicy(RestartPolicyNo))},
 			},
 		},
@@ -513,7 +523,7 @@ func TestToFlyMachineConfigMapsAllFields(t *testing.T) {
 			Path:  internal.Ref("/metrics"),
 			Port:  internal.Ref(9090),
 		},
-		Metadata: &map[string]string{"progresify.group": "app"},
+		Metadata: &map[string]string{"flydeploy.group": "app"},
 	}
 	assert.Equal(t, expected, g.ToFlyMachineConfig())
 }

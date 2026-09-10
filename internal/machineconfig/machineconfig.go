@@ -43,6 +43,10 @@ const (
 	CheckTypeTCP  = "tcp"
 )
 
+// MetadataIngressHostname carries the external ingress hostname served
+// by a machine group.
+const MetadataIngressHostname = "flydeploy.ingress-hostname"
+
 var (
 	containerNameRegexp = regexp.MustCompile(ContainerNamePattern)
 	regionRegexp        = regexp.MustCompile(`^[a-z]{2,4}$`)
@@ -83,6 +87,7 @@ type Group struct {
 // Guest describes machine level CPU and memory resources.
 type Guest struct {
 	CpuKind  string `json:"cpu_kind,omitempty"`
+	CpuArch  string `json:"cpu_arch,omitempty"`
 	Cpus     int    `json:"cpus"`
 	MemoryMb int    `json:"memory_mb"`
 }
@@ -248,6 +253,12 @@ func (g *Group) validate(path string) error {
 		return fmt.Errorf("%s: stop_signal '%s' must be an uppercase signal name like SIGTERM", path, g.StopSignal)
 	}
 	if g.Guest != nil {
+		if g.Guest.CpuKind != "" && g.Guest.CpuKind != "shared" && g.Guest.CpuKind != "performance" {
+			return fmt.Errorf("%s: guest cpu_kind '%s' must be shared or performance", path, g.Guest.CpuKind)
+		}
+		if g.Guest.CpuArch != "" && g.Guest.CpuArch != "amd64" && g.Guest.CpuArch != "arm64" {
+			return fmt.Errorf("%s: guest cpu_arch '%s' must be amd64 or arm64", path, g.Guest.CpuArch)
+		}
 		if g.Guest.Cpus < 1 {
 			return fmt.Errorf("%s: guest cpus must be at least 1", path)
 		}
