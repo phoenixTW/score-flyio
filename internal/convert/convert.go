@@ -33,10 +33,10 @@ import (
 	"github.com/score-spec/score-go/framework"
 	scoretypes "github.com/score-spec/score-go/types"
 
-	"github.com/astromechza/score-flyio/internal/appconfig"
-	"github.com/astromechza/score-flyio/internal/progresify"
-	"github.com/astromechza/score-flyio/internal/provisioners"
-	"github.com/astromechza/score-flyio/pkg/state"
+	"github.com/phoenixTW/score-flyio/internal/appconfig"
+	"github.com/phoenixTW/score-flyio/internal/progresify"
+	"github.com/phoenixTW/score-flyio/internal/provisioners"
+	"github.com/phoenixTW/score-flyio/pkg/state"
 )
 
 func anyFromMap[k string, v any](in map[k]v) (k, v, bool) {
@@ -69,7 +69,7 @@ func collateVmResources(cr scoretypes.ContainerResources) (cpus int, memory int6
 	return
 }
 
-const annotationPrefix = "score-flyio.astromechza.github.com/"
+const annotationPrefix = "score-flyio.phoenixtw.github.com/"
 
 var annotationReg = regexp.MustCompile(`^service-([^-]+)-(handlers|auto-stop|min-running|http-options|concurrency)$`)
 

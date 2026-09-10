@@ -12,7 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/astromechza/score-flyio/pkg/state"
+	"github.com/phoenixTW/score-flyio/pkg/state"
 )
 
 const (

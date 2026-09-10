@@ -8,8 +8,8 @@ import (
 	scoretypes "github.com/score-spec/score-go/types"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/astromechza/score-flyio/pkg/flydeploy/machineconfig"
-	"github.com/astromechza/score-flyio/pkg/state"
+	"github.com/phoenixTW/score-flyio/pkg/flydeploy/machineconfig"
+	"github.com/phoenixTW/score-flyio/pkg/state"
 )
 
 func TestMachinePlanMapsScoreAndProgresifyFields(t *testing.T) {

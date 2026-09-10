@@ -30,8 +30,8 @@ import (
 
 	"github.com/score-spec/score-go/framework"
 
-	"github.com/astromechza/score-flyio/internal"
-	"github.com/astromechza/score-flyio/pkg/state"
+	"github.com/phoenixTW/score-flyio/internal"
+	"github.com/phoenixTW/score-flyio/pkg/state"
 )
 
 func ProvisionResources(currentState *state.State) (*state.State, error) {

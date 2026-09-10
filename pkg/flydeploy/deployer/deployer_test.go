@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/astromechza/score-flyio/internal"
-	"github.com/astromechza/score-flyio/pkg/flymachines"
+	"github.com/phoenixTW/score-flyio/internal"
+	"github.com/phoenixTW/score-flyio/pkg/flymachines"
 	"github.com/stretchr/testify/assert"
 )
 

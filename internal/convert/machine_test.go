@@ -8,10 +8,10 @@ import (
 	scoretypes "github.com/score-spec/score-go/types"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/astromechza/score-flyio/internal"
-	"github.com/astromechza/score-flyio/internal/provisioners"
-	"github.com/astromechza/score-flyio/pkg/flydeploy/machineconfig"
-	"github.com/astromechza/score-flyio/pkg/state"
+	"github.com/phoenixTW/score-flyio/internal"
+	"github.com/phoenixTW/score-flyio/internal/provisioners"
+	"github.com/phoenixTW/score-flyio/pkg/flydeploy/machineconfig"
+	"github.com/phoenixTW/score-flyio/pkg/state"
 )
 
 func happyWorkloadSpec() scoretypes.Workload {

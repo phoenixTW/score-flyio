@@ -1,4 +1,4 @@
-module github.com/astromechza/score-flyio
+module github.com/phoenixTW/score-flyio
 
 go 1.24.0
 

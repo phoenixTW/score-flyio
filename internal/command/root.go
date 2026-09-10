@@ -20,8 +20,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/astromechza/score-flyio/internal/logging"
-	"github.com/astromechza/score-flyio/internal/provisioners/builtin"
+	"github.com/phoenixTW/score-flyio/internal/logging"
+	"github.com/phoenixTW/score-flyio/internal/provisioners/builtin"
 )
 
 var (
@@ -40,14 +40,20 @@ var (
 	}
 )
 
+var Version = ""
+
 func init() {
-	if info, ok := debug.ReadBuildInfo(); ok {
-		rootCmd.Version = info.Main.Version
-	}
 	rootCmd.PersistentFlags().BoolP("debug", "d", false, "Increase log verbosity to debug level")
 	builtin.Install(rootCmd)
 }
 
 func Execute() error {
+	if rootCmd.Version == "" {
+		if Version != "" {
+			rootCmd.Version = Version
+		} else if info, ok := debug.ReadBuildInfo(); ok {
+			rootCmd.Version = info.Main.Version
+		}
+	}
 	return rootCmd.Execute()
 }

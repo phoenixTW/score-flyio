@@ -13,10 +13,10 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/astromechza/score-flyio/pkg/flydeploy/machineconfig"
-	"github.com/astromechza/score-flyio/pkg/flydeploy/planner"
-	"github.com/astromechza/score-flyio/pkg/flymachines"
-	"github.com/astromechza/score-flyio/pkg/state"
+	"github.com/phoenixTW/score-flyio/pkg/flydeploy/machineconfig"
+	"github.com/phoenixTW/score-flyio/pkg/flydeploy/planner"
+	"github.com/phoenixTW/score-flyio/pkg/flymachines"
+	"github.com/phoenixTW/score-flyio/pkg/state"
 )
 
 func TestMachinePlanIsDeterministicAndDoesNotExposeEnvironmentValues(t *testing.T) {

@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/astromechza/score-flyio/pkg/flydeploy/deployer"
-	"github.com/astromechza/score-flyio/pkg/flydeploy/machineconfig"
-	"github.com/astromechza/score-flyio/pkg/flydeploy/planner"
-	"github.com/astromechza/score-flyio/pkg/flymachines"
+	"github.com/phoenixTW/score-flyio/pkg/flydeploy/deployer"
+	"github.com/phoenixTW/score-flyio/pkg/flydeploy/machineconfig"
+	"github.com/phoenixTW/score-flyio/pkg/flydeploy/planner"
+	"github.com/phoenixTW/score-flyio/pkg/flymachines"
 )
 
 const (

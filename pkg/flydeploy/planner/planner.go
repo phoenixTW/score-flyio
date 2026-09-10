@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/astromechza/score-flyio/pkg/flydeploy/machineconfig"
-	"github.com/astromechza/score-flyio/pkg/flymachines"
+	"github.com/phoenixTW/score-flyio/pkg/flydeploy/machineconfig"
+	"github.com/phoenixTW/score-flyio/pkg/flymachines"
 )
 
 const (

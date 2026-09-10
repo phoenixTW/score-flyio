@@ -16,8 +16,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/astromechza/score-flyio/internal/provisioners"
-	"github.com/astromechza/score-flyio/pkg/flymachines"
+	"github.com/phoenixTW/score-flyio/internal/provisioners"
+	"github.com/phoenixTW/score-flyio/pkg/flymachines"
 )
 
 const (

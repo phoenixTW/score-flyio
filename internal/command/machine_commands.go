@@ -22,14 +22,14 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
-	"github.com/astromechza/score-flyio/internal/convert"
-	"github.com/astromechza/score-flyio/internal/provisioners"
-	"github.com/astromechza/score-flyio/pkg/flydeploy/deployer"
-	"github.com/astromechza/score-flyio/pkg/flydeploy/machineconfig"
-	"github.com/astromechza/score-flyio/pkg/flydeploy/planner"
-	"github.com/astromechza/score-flyio/pkg/flydeploy/reconcile"
-	"github.com/astromechza/score-flyio/pkg/flymachines"
-	"github.com/astromechza/score-flyio/pkg/state"
+	"github.com/phoenixTW/score-flyio/internal/convert"
+	"github.com/phoenixTW/score-flyio/internal/provisioners"
+	"github.com/phoenixTW/score-flyio/pkg/flydeploy/deployer"
+	"github.com/phoenixTW/score-flyio/pkg/flydeploy/machineconfig"
+	"github.com/phoenixTW/score-flyio/pkg/flydeploy/planner"
+	"github.com/phoenixTW/score-flyio/pkg/flydeploy/reconcile"
+	"github.com/phoenixTW/score-flyio/pkg/flymachines"
+	"github.com/phoenixTW/score-flyio/pkg/state"
 )
 
 type machineCommandOptions struct {

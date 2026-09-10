@@ -14,11 +14,11 @@ import (
 	"github.com/score-spec/score-go/framework"
 	scoretypes "github.com/score-spec/score-go/types"
 
-	"github.com/astromechza/score-flyio/internal/progresify"
-	"github.com/astromechza/score-flyio/internal/provisioners"
-	"github.com/astromechza/score-flyio/pkg/flydeploy/machineconfig"
-	"github.com/astromechza/score-flyio/pkg/flydeploy/planner"
-	"github.com/astromechza/score-flyio/pkg/state"
+	"github.com/phoenixTW/score-flyio/internal/progresify"
+	"github.com/phoenixTW/score-flyio/internal/provisioners"
+	"github.com/phoenixTW/score-flyio/pkg/flydeploy/machineconfig"
+	"github.com/phoenixTW/score-flyio/pkg/flydeploy/planner"
+	"github.com/phoenixTW/score-flyio/pkg/state"
 )
 
 const metadataKeyPrefix = "progresify."

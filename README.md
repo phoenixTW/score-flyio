@@ -4,6 +4,21 @@ This repo is forked from the <https://github.com/score-spec/score-implementation
 
 This is a rewrite of <https://github.com/astromechza/score-flyio-archived> since the Score spec has moved on and our understanding of resource provisioning and Score feature compatibility is more complete now.
 
+## Releases
+
+Releases are cut with [GoReleaser](https://goreleaser.com) — the same toolchain
+Fly.io uses to ship `flyctl` — driven by version tags. Pushing a `v*` tag
+builds cross-platform binaries (linux/darwin/windows on amd64/arm64), archives,
+and checksums, and publishes them to the GitHub release:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+CI (build, test, lint) runs on every push to `main` and on pull requests; the
+release workflow runs only for tags.
+
 ## Library packages
 
 The reusable, domain-neutral Fly Machines deployment machinery lives under `pkg/` and can be imported by any Score renderer or other tooling:
@@ -24,7 +39,7 @@ adapter (`internal/progresify`, `internal/convert`) and the CLI
 
 ## Installation
 
-Download and extract the binary from the latest release on GitHub: <https://github.com/astromechza/score-flyio/releases>. Or build from source via `go install github.com/astromechza/score-flyio@latest`.
+Download and extract the binary from the latest release on GitHub: <https://github.com/phoenixTW/score-flyio/releases>. Or build from source via `go install github.com/phoenixTW/score-flyio@latest`.
 
 ### Workflow
 
@@ -74,35 +89,35 @@ See [./samples](./samples) for some sample Score apps that we use during testing
 
 `score-flyio` supports the following workload annotations that will modify the runtime behavior of the application when the annotations are found in the Workload metadata:
 
-**`score-flyio.astromechza.github.com/service-<portname>-handlers`**
+**`score-flyio.phoenixtw.github.com/service-<portname>-handlers`**
 
 Expects a comma-seperated list of [Fly Proxy connection handlers](https://fly.io/docs/reference/fly-proxy/#connection-handlers) and will add these to the `[[service.ports]]` entry for the port.
 
-For example, `score-flyio.astromechza.github.com/service-web-handlers: tls,http`.
+For example, `score-flyio.phoenixtw.github.com/service-web-handlers: tls,http`.
 
-**`score-flyio.astromechza.github.com/service-<portname>-http-options`**
+**`score-flyio.phoenixtw.github.com/service-<portname>-http-options`**
 
 Expects a serialized JSON payload that can contain the `http_service.http_options` attributes as documented in [the docs](https://fly.io/docs/reference/configuration/#http_service-http_options-idle_timeout).
 
-For example, `score-flyio.astromechza.github.com/service-web-http-options: '{"idle_timeout": 60}'`.
+For example, `score-flyio.phoenixtw.github.com/service-web-http-options: '{"idle_timeout": 60}'`.
 
-**`score-flyio.astromechza.github.com/service-<portname>-auto-stop`**
+**`score-flyio.phoenixtw.github.com/service-<portname>-auto-stop`**
 
 Enables Fly Proxy based auto-stop to the string set in this attribute. This also enables auto-start.
 
-For example, `score-flyio.astromechza.github.com/service-web-auto-stop: stop`.
+For example, `score-flyio.phoenixtw.github.com/service-web-auto-stop: stop`.
 
-**`score-flyio.astromechza.github.com/service-<portname>-min-running`**
+**`score-flyio.phoenixtw.github.com/service-<portname>-min-running`**
 
 Sets the minimum number of machines that must remain running.
 
-For example, `score-flyio.astromechza.github.com/service-web-min-running: "1"`.
+For example, `score-flyio.phoenixtw.github.com/service-web-min-running: "1"`.
 
-**`score-flyio.astromechza.github.com/service-<portname>-concurrency`**
+**`score-flyio.phoenixtw.github.com/service-<portname>-concurrency`**
 
 Sets the Fly Proxy request routing concurrency for load balancing requests between machines. This expects a JSON payload.
 
-For example, `score-flyio.astromechza.github.com/service-web-concurrency: '{"type": "requests", "hard_limit": 25, "soft_limit": 20}'`.
+For example, `score-flyio.phoenixtw.github.com/service-web-concurrency: '{"type": "requests", "hard_limit": 25, "soft_limit": 20}'`.
 
 ## State storage
 
@@ -304,8 +319,8 @@ apiVersion: score.dev/v1b1
 metadata:
     name: example
     annotations:
-        score-flyio.astromechza.github.com/service-web-handlers: "tls,http"
-        score-flyio.astromechza.github.com/service-web-auto-stop: "stop"
+        score-flyio.phoenixtw.github.com/service-web-handlers: "tls,http"
+        score-flyio.phoenixtw.github.com/service-web-auto-stop: "stop"
 containers:
     main:
         image: ghcr.io/astromechza/demo-app:latest

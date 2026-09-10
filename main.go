@@ -18,10 +18,13 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/astromechza/score-flyio/internal/command"
+	"github.com/phoenixTW/score-flyio/internal/command"
 )
 
+var version string
+
 func main() {
+	command.Version = version
 	if err := command.Execute(); err != nil {
 		slog.Error(err.Error())
 		os.Exit(1)
