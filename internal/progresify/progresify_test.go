@@ -194,6 +194,17 @@ func TestValidateHappyPath(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestValidateAcceptsFlyConcurrencyKeys(t *testing.T) {
+	metadata := happyMetadata()
+	mutateProcess(metadata, "app", func(p *Process) {
+		p.Concurrency = map[string]any{"type": "requests", "hard_limit": 25, "soft_limit": 10}
+	})
+
+	err := Validate(metadata, happyContainers())
+
+	assert.NoError(t, err)
+}
+
 func TestValidateErrors(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -254,6 +265,13 @@ func TestValidateErrors(t *testing.T) {
 				m.Processes["cloudflared"] = p
 			},
 			expected: "machine group 'app': process 'cloudflared' must share vm, scale, and restart with process 'app'",
+		},
+		{
+			name: "concurrency with unsupported key",
+			mutate: func(m *Metadata) {
+				mutateProcess(m, "app", func(p *Process) { p.Concurrency = map[string]any{"soft": 10} })
+			},
+			expected: "processes[app].concurrency: key 'soft' must be one of type, hard_limit, soft_limit",
 		},
 		{
 			name:     "ingress with invalid type",

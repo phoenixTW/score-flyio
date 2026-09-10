@@ -122,7 +122,7 @@ func loadMachineInput(cmd *cobra.Command, workloadFile string, options machineCo
 			return nil, fmt.Errorf("failed to persist state file: %w", err)
 		}
 	}
-	plan, secrets, err := convert.MachinePlanWithSecrets(current, workloadName, options.environment, "")
+	plan, secrets, err := convert.MachinePlanWithSecrets(current, workloadName, options.environment, rootCmd.Version)
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +229,6 @@ func runMachinePlan(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	var changes []planner.MachineChange
-	// Plan is usable without credentials; apply performs live reconciliation.
 	changes, err = planner.Diff(input.plan, nil)
 	if !machineOptions(cmd).dryRun {
 		if client, clientErr := newMachinesClient(); clientErr == nil {
@@ -290,6 +289,9 @@ func runMachineApply(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("plan integrity check failed")
 		}
 		exact := artifact.Plan
+		if exact.AppName != input.plan.AppName || exact.Workload != input.plan.Workload {
+			return fmt.Errorf("plan file targets app %q workload %q but score file targets app %q workload %q", exact.AppName, exact.Workload, input.plan.AppName, input.plan.Workload)
+		}
 		if validateErr := exact.Validate(); validateErr != nil {
 			return fmt.Errorf("invalid plan: %w", validateErr)
 		}
@@ -332,13 +334,13 @@ func runMachineValidate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if machineOptions(cmd).dryRun {
-		return writeMachineJSON(cmd, outputFor(input, nil))
-	}
 	return writeMachineJSON(cmd, outputFor(input, nil))
 }
 
 func runMachineStatus(cmd *cobra.Command, args []string) error {
+	if machineOptions(cmd).dryRun {
+		return fmt.Errorf("--dry-run is only supported by plan and validate")
+	}
 	input, err := loadMachineInput(cmd, args[0], machineOptions(cmd), false)
 	if err != nil {
 		return err
@@ -374,6 +376,9 @@ func runMachineStatus(cmd *cobra.Command, args []string) error {
 
 func runMachineDestroy(cmd *cobra.Command, args []string) error {
 	options := machineOptions(cmd)
+	if options.dryRun {
+		return fmt.Errorf("--dry-run is only supported by plan and validate")
+	}
 	if !options.yes {
 		return fmt.Errorf("destroy requires --yes")
 	}
@@ -422,7 +427,7 @@ func setMachineSecrets(cmd *cobra.Command, token, app string, secrets map[string
 		args = append(args, fmt.Sprintf("%s=%s", key, secret))
 	}
 	secretCommand := exec.Command("fly", args...)
-	secretCommand.Stderr, secretCommand.Stdout = cmd.ErrOrStderr(), cmd.OutOrStdout()
+	secretCommand.Stderr, secretCommand.Stdout = cmd.ErrOrStderr(), cmd.ErrOrStderr()
 	if err := secretCommand.Run(); err != nil {
 		return fmt.Errorf("failed to set machine secrets: %w", err)
 	}
@@ -430,6 +435,9 @@ func setMachineSecrets(cmd *cobra.Command, token, app string, secrets map[string
 }
 
 func runMachineReconcile(cmd *cobra.Command, args []string) error {
+	if machineOptions(cmd).dryRun {
+		return fmt.Errorf("--dry-run is only supported by plan and validate")
+	}
 	input, err := loadMachineInput(cmd, args[0], machineOptions(cmd), true)
 	if err != nil {
 		return err

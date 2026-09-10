@@ -159,7 +159,7 @@ func Apply(ctx context.Context, d *deployer.Deployer, desired *machineconfig.Pla
 		}
 	}
 	for _, machineID := range deferredDeletes {
-		if err := d.DeleteMachine(ctx, machineID, false); err != nil {
+		if err := d.DeleteMachine(ctx, machineID, true); err != nil {
 			return rollback(err)
 		}
 	}

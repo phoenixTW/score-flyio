@@ -22,6 +22,8 @@ var validIngressTypes = []string{"none", "private", "cloudflare"}
 
 var validPortHandlers = []string{"http", "tls", "http+tls"}
 
+var validConcurrencyKeys = []string{"type", "hard_limit", "soft_limit"}
+
 // Metadata is the typed contract for the metadata.progresify workload section.
 type Metadata struct {
 	Owner           string             `json:"owner"`
@@ -214,6 +216,16 @@ func validateProcess(name string, p Process) []error {
 	}
 	if p.HttpService != nil {
 		errs = append(errs, validateHttpService(name, p.HttpService)...)
+	}
+	concurrencyKeys := make([]string, 0, len(p.Concurrency))
+	for key := range p.Concurrency {
+		concurrencyKeys = append(concurrencyKeys, key)
+	}
+	slices.Sort(concurrencyKeys)
+	for _, key := range concurrencyKeys {
+		if !slices.Contains(validConcurrencyKeys, key) {
+			errs = append(errs, fmt.Errorf("processes[%s].concurrency: key '%s' must be one of %s", name, key, strings.Join(validConcurrencyKeys, ", ")))
+		}
 	}
 	checkNames := make([]string, 0, len(p.Checks))
 	for checkName := range p.Checks {

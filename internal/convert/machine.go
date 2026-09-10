@@ -58,7 +58,7 @@ func MachinePlanWithSecrets(currentState *state.State, workloadName string, envi
 	if pm == nil {
 		return nil, nil, fmt.Errorf("workload '%s' requires metadata.%s for machine deployment", workloadName, progresify.MetadataKey)
 	}
-	if pm.Ingress != nil && pm.Ingress.Type == "cloudflare" && environment != "" && environment != "staging" {
+	if pm.Ingress != nil && pm.Ingress.Type == "cloudflare" && environment != "staging" {
 		return nil, nil, fmt.Errorf("metadata.%s.ingress: cloudflare ingress is restricted to staging", progresify.MetadataKey)
 	}
 

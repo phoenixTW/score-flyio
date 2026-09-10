@@ -29,7 +29,7 @@ func happyWorkloadSpec() scoretypes.Workload {
 				"vm":            map[string]any{"cpus": 1, "memory_mb": 512},
 				"scale":         map[string]any{"min": 1, "max": 2},
 				"restart":       "always",
-				"concurrency":   map[string]any{"soft": 10, "hard": 20},
+				"concurrency":   map[string]any{"soft_limit": 10, "hard_limit": 20},
 				"http_service": map[string]any{
 					"internal_port":        8080,
 					"auto_stop":            "stop",
@@ -156,7 +156,7 @@ func happyPlan() *machineconfig.Plan {
 					AutoStop:           "stop",
 					AutoStart:          true,
 					MinMachinesRunning: 1,
-					Concurrency:        map[string]any{"soft": float64(10), "hard": float64(20)},
+					Concurrency:        map[string]any{"soft_limit": float64(10), "hard_limit": float64(20)},
 					Checks: []machineconfig.ServiceHttpCheck{{
 						Method:          "get",
 						Path:            "/healthz",

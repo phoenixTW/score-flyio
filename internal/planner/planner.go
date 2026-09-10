@@ -102,8 +102,6 @@ func Diff(desired *machineconfig.Plan, live []flymachines.Machine) ([]MachineCha
 		}
 	}
 
-	// Only machines carrying our adoption metadata are safe to classify as
-	// orphans. Unmanaged machines are deliberately left untouched.
 	for group, machines := range byGroup {
 		if seen[group] {
 			continue

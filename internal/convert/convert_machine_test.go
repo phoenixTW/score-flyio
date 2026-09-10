@@ -7,7 +7,6 @@ import (
 	"github.com/score-spec/score-go/framework"
 	scoretypes "github.com/score-spec/score-go/types"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/astromechza/score-flyio/internal/machineconfig"
 	"github.com/astromechza/score-flyio/internal/state"
@@ -70,13 +69,18 @@ func TestMachinePlanMapsScoreAndProgresifyFields(t *testing.T) {
 	})
 
 	plan, secrets, err := MachinePlanWithSecrets(currentState, "gateway", "staging", "test")
-	require.NoError(t, err)
-	require.NotNil(t, plan)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, plan)
 	assert.Empty(t, secrets)
-	require.NoError(t, plan.Validate())
+	if !assert.NoError(t, plan.Validate()) {
+		return
+	}
 
 	assert.Equal(t, "score-gateway", plan.AppName)
-	require.Len(t, plan.Groups, 2)
+	if !assert.Len(t, plan.Groups, 2) {
+		return
+	}
 	assert.Equal(t, []string{"web", "worker"}, []string{plan.Groups[0].Name, plan.Groups[1].Name})
 
 	web := plan.Groups[0]
@@ -88,7 +92,9 @@ func TestMachinePlanMapsScoreAndProgresifyFields(t *testing.T) {
 	assert.Equal(t, "web", web.Metadata["progresify.group"])
 	assert.Equal(t, "platform", web.Metadata["progresify.owner"])
 	assert.Equal(t, "gateway-staging", web.Metadata["progresify.secret-namespace"])
-	require.Len(t, web.Containers, 1)
+	if !assert.Len(t, web.Containers, 1) {
+		return
+	}
 	assert.Equal(t, machineconfig.Container{
 		Name:    "api",
 		Image:   "ghcr.io/example/api:1",
@@ -100,7 +106,9 @@ func TestMachinePlanMapsScoreAndProgresifyFields(t *testing.T) {
 		Restart: machineconfig.RestartPolicyAlways,
 	}, web.Containers[0])
 	assert.Equal(t, []machineconfig.Volume{{Name: "data"}}, web.Volumes)
-	require.Len(t, web.Services, 1)
+	if !assert.Len(t, web.Services, 1) {
+		return
+	}
 	assert.Equal(t, machineconfig.Service{
 		Protocol:           "tcp",
 		InternalPort:       8080,
@@ -141,9 +149,12 @@ func TestMachinePlanColocatesContainersWithDistinctImages(t *testing.T) {
 	})
 
 	plan, secrets, err := MachinePlanWithSecrets(currentState, "gateway", "staging", "test")
-	require.NoError(t, err)
+
+	assert.NoError(t, err)
 	assert.Empty(t, secrets)
-	require.Len(t, plan.Groups, 1)
+	if !assert.Len(t, plan.Groups, 1) {
+		return
+	}
 	assert.Equal(t, "app", plan.Groups[0].Name)
 	assert.Equal(t, []machineconfig.Container{
 		{Name: "api", Image: "ghcr.io/example/api:abc", Env: map[string]string{}, Restart: machineconfig.RestartPolicyAlways},
@@ -191,6 +202,7 @@ func TestMachinePlanRejectsInvalidMetadataContainerCombinations(t *testing.T) {
 				Containers: tt.containers,
 			})
 			plan, _, err := MachinePlanWithSecrets(currentState, "gateway", "staging", "test")
+
 			assert.Nil(t, plan)
 			assert.ErrorContains(t, err, tt.want)
 		})
@@ -204,12 +216,14 @@ func TestMachinePlanIsAbsentWithoutProgresifyMetadataAndLegacyConversionStillWor
 	})
 
 	plan, secrets, err := MachinePlanWithSecrets(currentState, "gateway", "staging", "test")
-	require.NoError(t, err)
+
+	assert.NoError(t, err)
 	assert.Nil(t, plan)
 	assert.Empty(t, secrets)
 
 	legacy, secrets, err := Workload(currentState, "gateway")
-	require.NoError(t, err)
+
+	assert.NoError(t, err)
 	assert.Empty(t, secrets)
 	assert.Equal(t, "score-gateway", legacy.AppName)
 	assert.Equal(t, "ghcr.io/example/api:1", legacy.Build.Image)

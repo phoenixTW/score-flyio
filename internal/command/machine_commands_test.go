@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/astromechza/score-flyio/internal/machineconfig"
 	"github.com/astromechza/score-flyio/internal/planner"
@@ -20,9 +19,12 @@ func TestMachinePlanIsDeterministicAndDoesNotExposeEnvironmentValues(t *testing.
 	workloadFile := writeMachineCommandFixture(t, strings.Repeat("a", 64))
 
 	first, _, err := executeAndResetCommand(context.Background(), rootCmd, []string{"plan", workloadFile})
-	require.NoError(t, err)
+
+	assert.NoError(t, err)
+
 	second, _, err := executeAndResetCommand(context.Background(), rootCmd, []string{"plan", workloadFile})
-	require.NoError(t, err)
+
+	assert.NoError(t, err)
 
 	assert.Equal(t, first, second)
 	assert.Contains(t, first, `"workload": "gateway"`)
@@ -46,7 +48,8 @@ func TestMachineApplyValidatesImmutableImagesBeforeCallingHook(t *testing.T) {
 	t.Cleanup(func() { machineHooks = previousHooks })
 
 	_, _, err := executeAndResetCommand(context.Background(), rootCmd, []string{"apply", workloadFile})
-	require.ErrorContains(t, err, "must be pinned to an immutable sha256 digest")
+
+	assert.ErrorContains(t, err, "must be pinned to an immutable sha256 digest")
 }
 
 func TestMachineApplyPassesTheGeneratedPlanAndSecretsOnlyToHook(t *testing.T) {
@@ -63,10 +66,15 @@ func TestMachineApplyPassesTheGeneratedPlanAndSecretsOnlyToHook(t *testing.T) {
 	t.Cleanup(func() { machineHooks = previousHooks })
 
 	_, _, err := executeAndResetCommand(context.Background(), rootCmd, []string{"apply", workloadFile})
-	require.NoError(t, err)
-	require.NotNil(t, received)
+
+	assert.NoError(t, err)
+	if !assert.NotNil(t, received) {
+		return
+	}
 	assert.Equal(t, "sha256:"+strings.Repeat("b", 64), received.Groups[0].Containers[0].ImageDigest)
-	require.Len(t, receivedChanges, 1)
+	if !assert.Len(t, receivedChanges, 1) {
+		return
+	}
 	assert.Equal(t, planner.ActionCreate, receivedChanges[0].Action)
 }
 
@@ -74,7 +82,8 @@ func TestMachineLifecycleHooksAndMissingClientError(t *testing.T) {
 	workloadFile := writeMachineCommandFixture(t, strings.Repeat("c", 64))
 
 	_, _, err := executeAndResetCommand(context.Background(), rootCmd, []string{"status", workloadFile})
-	require.EqualError(t, err, "Fly client is not configured for machine status")
+
+	assert.EqualError(t, err, "fly client is not configured for machine status")
 
 	previousHooks := machineHooks
 	var reconciled, destroyed bool
@@ -93,12 +102,17 @@ func TestMachineLifecycleHooksAndMissingClientError(t *testing.T) {
 	t.Cleanup(func() { machineHooks = previousHooks })
 
 	stdout, _, err := executeAndResetCommand(context.Background(), rootCmd, []string{"status", workloadFile})
-	require.NoError(t, err)
+
+	assert.NoError(t, err)
 	assert.Equal(t, "configured\n", stdout)
+
 	_, _, err = executeAndResetCommand(context.Background(), rootCmd, []string{"reconcile", workloadFile})
-	require.NoError(t, err)
+
+	assert.NoError(t, err)
+
 	_, _, err = executeAndResetCommand(context.Background(), rootCmd, []string{"destroy", "--yes", workloadFile})
-	require.NoError(t, err)
+
+	assert.NoError(t, err)
 	assert.True(t, reconciled)
 	assert.True(t, destroyed)
 }
@@ -106,7 +120,8 @@ func TestMachineLifecycleHooksAndMissingClientError(t *testing.T) {
 func TestLegacyAndMachineCommandsAreRegistered(t *testing.T) {
 	for _, name := range []string{"init", "generate", "provisioners", "validate", "plan", "apply", "status", "reconcile", "destroy"} {
 		cmd, _, err := rootCmd.Find([]string{name})
-		require.NoError(t, err)
+
+		assert.NoError(t, err)
 		assert.Equal(t, name, cmd.Name())
 	}
 }
@@ -123,7 +138,9 @@ func writeMachineCommandFixture(t *testing.T, digest string) string {
 			SharedState: map[string]interface{}{state.SharedStateAppPrefixKey: "score-"},
 		},
 	}
-	require.NoError(t, sd.Persist())
+	if !assert.NoError(t, sd.Persist()) {
+		t.FailNow()
+	}
 
 	workloadFile := "score.yaml"
 	content := fmt.Sprintf(`apiVersion: score.dev/v1b1
@@ -139,6 +156,8 @@ containers:
       RUNTIME_SECRET: super-secret-runtime-value
       PUBLIC_VALUE: ordinary-environment-value
 `, digest)
-	require.NoError(t, os.WriteFile(workloadFile, []byte(content), 0600))
+	if !assert.NoError(t, os.WriteFile(workloadFile, []byte(content), 0600)) {
+		t.FailNow()
+	}
 	return workloadFile
 }

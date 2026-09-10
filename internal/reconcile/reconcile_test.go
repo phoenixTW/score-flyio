@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/astromechza/score-flyio/internal"
 	"github.com/astromechza/score-flyio/internal/deployer"
@@ -24,26 +24,33 @@ func TestPlanReadsLiveMachinesAndProducesNoop(t *testing.T) {
 		Metadata:   map[string]string{"progresify.group": "app"},
 	}
 	hash, err := machineconfig.ConfigHash(&group)
-	require.NoError(t, err)
+
+	assert.NoError(t, err)
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/apps/test-app/machines", r.URL.Path)
+		assert.Equal(t, "/apps/test-app/machines", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
 		metadata := map[string]string{"progresify.group": "app", "progresify.config-hash": hash}
 		_ = json.NewEncoder(w).Encode([]flymachines.Machine{{Id: internal.Ref("m1"), Region: internal.Ref("iad"), Config: &flymachines.FlyMachineConfig{Metadata: &metadata}}})
 	}))
 	defer server.Close()
 	client, err := flymachines.NewClientWithResponses(server.URL)
-	require.NoError(t, err)
+
+	assert.NoError(t, err)
+
 	result, err := Plan(context.Background(), deployer.New(client, "test-app"), &machineconfig.Plan{AppName: "test-app", Workload: "api", Groups: []machineconfig.Group{group}})
-	require.NoError(t, err)
-	require.Len(t, result.Changes, 1)
-	require.Equal(t, "noop", string(result.Changes[0].Action))
+
+	assert.NoError(t, err)
+	assert.Len(t, result.Changes, 1)
+	assert.Equal(t, "noop", string(result.Changes[0].Action))
 }
 
 func TestConfigWithHashDoesNotMutateGroup(t *testing.T) {
 	group := machineconfig.Group{Name: "app", Metadata: map[string]string{"owner": "platform"}}
+
 	config := configWithHash(group, "abc")
-	require.Equal(t, "platform", group.Metadata["owner"])
-	require.NotEqual(t, "abc", group.Metadata["progresify.config-hash"])
-	require.Equal(t, "abc", (*config.Metadata)["progresify.config-hash"])
+
+	assert.Equal(t, "platform", group.Metadata["owner"])
+	assert.NotEqual(t, "abc", group.Metadata["progresify.config-hash"])
+	assert.Equal(t, "abc", (*config.Metadata)["progresify.config-hash"])
 }

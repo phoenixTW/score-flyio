@@ -92,23 +92,6 @@ type Deployer struct {
 	config  config
 }
 
-// MachinesAPI is the deployer seam used by reconciliation code. Deployer is
-// the HTTP adapter; callers can substitute a fake implementation.
-type MachinesAPI interface {
-	ListMachines(context.Context) ([]flymachines.Machine, error)
-	GetMachine(context.Context, string) (*flymachines.Machine, bool, error)
-	CreateMachine(context.Context, string, string, flymachines.FlyMachineConfig) (*flymachines.Machine, error)
-	UpdateMachine(context.Context, string, string, string, flymachines.FlyMachineConfig) (*flymachines.Machine, error)
-	WaitReady(context.Context, string, WaitOptions) (*flymachines.Machine, error)
-	StopMachine(context.Context, string) error
-	SuspendMachine(context.Context, string) error
-	ResumeMachine(context.Context, string) error
-	RestartMachine(context.Context, string) error
-	DeleteMachine(context.Context, string, bool) error
-}
-
-var _ MachinesAPI = (*Deployer)(nil)
-
 // New creates a deployer using the default retry and polling policy.
 func New(api flymachines.ClientWithResponsesInterface, appName string) *Deployer {
 	return NewWithOptions(api, appName)
