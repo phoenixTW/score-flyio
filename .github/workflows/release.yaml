@@ -1,31 +1,61 @@
 name: release
 on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+    branches:
+      - main
   push:
     tags:
       - v*
 permissions:
   contents: write
+concurrency:
+  group: release
+  cancel-in-progress: false
 jobs:
   release:
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'push' ||
+      github.event.workflow_run.conclusion == 'success'
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
+      - name: checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Fetch all tags
-        run: git fetch --force --tags
-      - name: Set up Go
-        uses: actions/setup-go@v7
+      - name: resolve release tag
+        id: tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          git fetch --force --tags
+          tag="$(git describe --tags --abbrev=0)"
+          head="$(git rev-list -n1 "$tag")"
+          if [ "$EVENT_NAME" = "workflow_run" ] \
+            && [ "$head" != "$HEAD_SHA" ]; then
+            echo "latest tag does not match run head, skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: set up Go
+        if: steps.tag.outputs.skip != 'true'
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v7
+      - name: checkout tag
+        if: steps.tag.outputs.skip != 'true'
+        run: git checkout --detach "${{ steps.tag.outputs.tag }}"
+      - name: run GoReleaser
+        if: steps.tag.outputs.skip != 'true'
+        uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: '~> v2'
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Check git diff
-        run: git diff --exit-code
+          GORELEASER_CURRENT_TAG: ${{ steps.tag.outputs.tag }}
