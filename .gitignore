@@ -1,0 +1,7 @@
+.score-flyio/
+/score.yaml
+.idea/
+manifests.yaml
+/*.toml
+/*.env
+/dist/

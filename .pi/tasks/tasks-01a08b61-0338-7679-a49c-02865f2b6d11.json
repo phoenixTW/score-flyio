@@ -1,0 +1,100 @@
+{
+  "nextId": 9,
+  "tasks": [
+    {
+      "id": "1",
+      "subject": "Commit baseline upstream code",
+      "description": "Commit the existing upstream score-flyio code as the starting baseline on main. No changes.",
+      "status": "in_progress",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1789046305345,
+      "updatedAt": 1789046312972
+    },
+    {
+      "id": "2",
+      "subject": "Add internal/progresify typed metadata contract",
+      "description": "New package internal/progresify: typed metadata.progresify contract (owner, slackChannel, secretNamespace, region, ingress, releaseCommand, variables, processes) with parsing from workload metadata map + validation. Validation rules: every declared process has exactly one matching Score container name; no container left unconfigured; process config has vm, scale, machineGroup, httpService, concurrency, checks, restart; ingress restricted to private (internal) or cloudflare (public staging); container names valid pattern, no dupes/empty. P0 Angada topology contract items.",
+      "status": "pending",
+      "activeForm": "Building progresify contract package",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1789046305346,
+      "updatedAt": 1789046305346
+    },
+    {
+      "id": "3",
+      "subject": "Add internal/machineconfig multi-container model",
+      "description": "New package internal/machineconfig: typed multi-container machine group model — containers[] with per-container image/command/args/env/files/mounts/restart, machine guest resources, services, checks, region, lifecycle policy (restart/schedule/autodestroy/stop_config). Container name preservation + reject duplicate/empty/invalid names. Colocation semantics validation: containers in one machine share scale and lifecycle. Deterministic conversion helper to flymachines.FlyMachineConfig. Replaces single-container guard model in internal/convert.",
+      "status": "pending",
+      "activeForm": "Building machineconfig model",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1789046305347,
+      "updatedAt": 1789046305347
+    },
+    {
+      "id": "4",
+      "subject": "Multi-container conversion in internal/convert",
+      "description": "internal/convert: replace single-container guard with typed multi-container flow. Deterministic mapping from Score containers + metadata.progresify.processes to machine groups. Different images in one machine allowed (cloudflared). Keep legacy fly.toml AppConfig output path working for single-container workloads without progresify metadata. Unit tests for field mapping and invalid combos.",
+      "status": "pending",
+      "activeForm": "Wiring multi-container conversion",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1789046305348,
+      "updatedAt": 1789046305348
+    },
+    {
+      "id": "5",
+      "subject": "Add Machines API deployer primitives",
+      "description": "New package internal/deployer: Machines API deployer over internal/flymachines generated client — create, inspect, update, wait (state + health-check readiness), stop, suspend, restart, delete, list machines. Never report success on API response alone; wait for started state + checks passing. Mocked contract tests using httptest server.",
+      "status": "pending",
+      "activeForm": "Building Machines API deployer",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1789046305348,
+      "updatedAt": 1789046305348
+    },
+    {
+      "id": "6",
+      "subject": "Idempotent reconciliation + rollback",
+      "description": "internal/deployer: reconciliation — compare desired machine groups vs live machines (by metadata), update in place when config equal (no replacement), create missing, remove orphans only when expected count known; partial-failure recovery: stop/suspend or roll back machines created during failed apply. Idempotency tests: second identical apply is a no-op.",
+      "status": "pending",
+      "activeForm": "Building reconciliation engine",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1789046305349,
+      "updatedAt": 1789046305349
+    },
+    {
+      "id": "7",
+      "subject": "CLI: plan/apply commands + generate --deploy machines path",
+      "description": "internal/command: add plan and apply commands with --dry-run and machine-readable JSON plan output (renderer version, workload, environment, machine group, image). generate --deploy uses Machines API deployer when workload needs multi-container support; never silently falls back to invalid TOML plan. Tests via executeAndResetCommand.",
+      "status": "pending",
+      "activeForm": "Wiring CLI commands",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1789046305350,
+      "updatedAt": 1789046305350
+    },
+    {
+      "id": "8",
+      "subject": "Full suite + lint + tick TODOS",
+      "description": "Run go build, go vet, full go test ./..., golangci-lint if available. Tick completed TODOS.md checkboxes. Final review of diff. Commit.",
+      "status": "pending",
+      "activeForm": "Verifying suite and finalizing",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1789046305351,
+      "updatedAt": 1789046305351
+    }
+  ]
+}
