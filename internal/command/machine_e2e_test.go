@@ -456,9 +456,7 @@ func TestMachineCommandsEndToEndAgainstFakeApi(t *testing.T) {
 		assert.Equal(t, 1, fake.secretOperationCount())
 		secretCreates := fake.recordedSecretCreates()
 		if assert.Len(t, secretCreates, 1) {
-			assert.Equal(t, "API_TOKEN", secretCreates[0].Label)
-			assert.Equal(t, e2eSecretValue, secretCreates[0].Value)
-			assert.Equal(t, "Bearer e2e-token", secretCreates[0].Authorization)
+			assert.Equal(t, fakeSecretCreate{Label: "API_TOKEN", Value: e2eSecretValue, Authorization: "Bearer e2e-token"}, secretCreates[0])
 		}
 
 		assert.NotContains(t, stdout, e2eSecretValue)

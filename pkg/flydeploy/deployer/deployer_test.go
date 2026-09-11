@@ -494,19 +494,16 @@ func TestSetSecretsPostsOneCallPerKeyInSortedOrder(t *testing.T) {
 	})
 
 	assert.NoError(t, err)
+	alphaValue := secretValueBytes("sentinel-secret-value-alpha")
+	alphaBody, err := json.Marshal(flymachines.CreateSecretRequest{Value: &alphaValue})
+	assert.NoError(t, err)
+	betaValue := secretValueBytes("sentinel-secret-value-beta")
+	betaBody, err := json.Marshal(flymachines.CreateSecretRequest{Value: &betaValue})
+	assert.NoError(t, err)
 	if assert.Len(t, records, 2) {
-		assert.Equal(t, http.MethodPost, records[0].Method)
-		assert.Equal(t, "/apps/test-app/secrets/ALPHA_KEY/type/string", records[0].Path)
-		assert.Equal(t, "/apps/test-app/secrets/BETA_KEY/type/string", records[1].Path)
+		assert.Equal(t, secretCreateRecord{Method: http.MethodPost, Path: "/apps/test-app/secrets/ALPHA_KEY/type/string", Body: string(alphaBody)}, records[0])
+		assert.Equal(t, secretCreateRecord{Method: http.MethodPost, Path: "/apps/test-app/secrets/BETA_KEY/type/string", Body: string(betaBody)}, records[1])
 	}
-	var alphaBody flymachines.CreateSecretRequest
-	assert.NoError(t, json.Unmarshal([]byte(records[0].Body), &alphaBody))
-	assert.NotNil(t, alphaBody.Value)
-	assert.Equal(t, secretValueBytes("sentinel-secret-value-alpha"), *alphaBody.Value)
-	var betaBody flymachines.CreateSecretRequest
-	assert.NoError(t, json.Unmarshal([]byte(records[1].Body), &betaBody))
-	assert.NotNil(t, betaBody.Value)
-	assert.Equal(t, secretValueBytes("sentinel-secret-value-beta"), *betaBody.Value)
 }
 
 func TestSetSecretsPropagatesAuthorizationHeader(t *testing.T) {

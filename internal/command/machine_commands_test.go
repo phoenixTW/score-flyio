@@ -413,13 +413,8 @@ func TestSetMachineSecretsUsesDeployerApi(t *testing.T) {
 
 		assert.NoError(t, err)
 		if assert.Len(t, requests, 2) {
-			assert.Equal(t, "POST", requests[0].method)
-			assert.Equal(t, "/apps/score-gateway/secrets/A_PASSWORD/type/string", requests[0].path)
-			assert.Equal(t, "Bearer test-token", requests[0].authorization)
-			assert.Equal(t, secretValueToInts("s3cret"), requests[0].value)
-			assert.Equal(t, "/apps/score-gateway/secrets/B_PASSWORD/type/string", requests[1].path)
-			assert.Equal(t, "Bearer test-token", requests[1].authorization)
-			assert.Equal(t, secretValueToInts("hunter2"), requests[1].value)
+			assert.Equal(t, recordedSecretRequest{method: http.MethodPost, path: "/apps/score-gateway/secrets/A_PASSWORD/type/string", authorization: "Bearer test-token", value: secretValueToInts("s3cret")}, requests[0])
+			assert.Equal(t, recordedSecretRequest{method: http.MethodPost, path: "/apps/score-gateway/secrets/B_PASSWORD/type/string", authorization: "Bearer test-token", value: secretValueToInts("hunter2")}, requests[1])
 		}
 	})
 
