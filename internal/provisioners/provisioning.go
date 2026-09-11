@@ -107,7 +107,6 @@ ResourceLoop:
 			dec := json.NewDecoder(bytes.NewReader(rawOutputs))
 			dec.DisallowUnknownFields()
 			if err := dec.Decode(&outputs); err != nil {
-				slog.Debug("invalid provisioner outputs", slog.String("raw", string(rawOutputs)))
 				return out, fmt.Errorf("%s: failed to decode response from provisioner: %w", resUid, err)
 			}
 			resState.ProvisionerUri = provisioner.ProvisionerId
@@ -193,7 +192,6 @@ func DeProvisionResource(currentState *state.State, uid framework.ResourceUid) (
 	dec := json.NewDecoder(bytes.NewReader(rawOutputs))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&outputs); err != nil {
-		slog.Debug("invalid provisioner outputs", slog.String("raw", string(rawOutputs)))
 		return out, fmt.Errorf("%s: failed to decode response from provisioner: %w", uid, err)
 	}
 	delete(out.Resources, uid)
@@ -274,7 +272,7 @@ func doHttpRequest(h *state.HttpProvisioner, method string, inputs ProvisionerIn
 	defer func() { _ = res.Body.Close() }()
 	bod, _ := io.ReadAll(res.Body)
 	if res.StatusCode >= 300 {
-		return bod, fmt.Errorf("http provision request failed with status: %d %s: '%s'", res.StatusCode, res.Status, string(bod))
+		return bod, fmt.Errorf("http provision request failed with status: %d", res.StatusCode)
 	}
 	return bod, nil
 }
