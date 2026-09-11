@@ -5,3 +5,4 @@ manifests.yaml
 /*.toml
 /*.env
 /dist/
+.pi/
