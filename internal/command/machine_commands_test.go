@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/phoenixTW/score-flyio/pkg/flydeploy/deployer"
 	"github.com/phoenixTW/score-flyio/pkg/flydeploy/machineconfig"
 	"github.com/phoenixTW/score-flyio/pkg/flydeploy/planner"
 	"github.com/phoenixTW/score-flyio/pkg/flymachines"
@@ -371,42 +372,89 @@ containers:
 	return workloadFile
 }
 
-func TestSetMachineSecretsPipesSecretsViaStdin(t *testing.T) {
-	var capturedArgs []string
-	var capturedToken string
-	var capturedStdin string
-	original := execFlyWithInput
-	execFlyWithInput = func(args []string, token, stdin string, stdout, stderr io.Writer) error {
-		capturedArgs = args
-		capturedToken = token
-		capturedStdin = stdin
-		_, _ = fmt.Fprintln(stdout, "secrets staged")
-		return nil
+func TestSetMachineSecretsUsesDeployerApi(t *testing.T) {
+	type recordedSecretRequest struct {
+		method        string
+		path          string
+		authorization string
+		value         []int
 	}
-	t.Cleanup(func() { execFlyWithInput = original })
+	newSecretsDeployer := func(t *testing.T, recorded *[]recordedSecretRequest, respond func(w http.ResponseWriter)) *deployer.Deployer {
+		t.Helper()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var body flymachines.CreateSecretRequest
+			if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&body)) {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			value := []int{}
+			if body.Value != nil {
+				value = *body.Value
+			}
+			*recorded = append(*recorded, recordedSecretRequest{method: r.Method, path: r.URL.Path, authorization: r.Header.Get("Authorization"), value: value})
+			respond(w)
+		}))
+		t.Cleanup(server.Close)
+		client, err := flymachines.NewClientWithResponses(server.URL, flymachines.WithRequestEditorFn(func(_ context.Context, req *http.Request) error {
+			req.Header.Set("Authorization", "Bearer test-token")
+			return nil
+		}))
+		if !assert.NoError(t, err) {
+			t.FailNow()
+		}
+		return deployer.New(client, "score-gateway")
+	}
 
-	cmd := &cobra.Command{}
-	logs := &strings.Builder{}
-	cmd.SetErr(logs)
+	t.Run("posts one request per key in sorted order", func(t *testing.T) {
+		var requests []recordedSecretRequest
+		d := newSecretsDeployer(t, &requests, func(w http.ResponseWriter) { w.WriteHeader(http.StatusCreated) })
 
-	err := setMachineSecrets(cmd, "token-value", "app-value", map[string]string{"B_PASSWORD": "hunter2", "A_PASSWORD": "s3cret"})
+		err := setMachineSecrets(context.Background(), d, map[string]string{"B_PASSWORD": "hunter2", "A_PASSWORD": "s3cret"})
 
-	assert.NoError(t, err)
-	assert.Equal(t, []string{"secrets", "import", "--app", "app-value", "--stage"}, capturedArgs)
-	assert.Equal(t, "token-value", capturedToken)
-	assert.NotContains(t, capturedArgs, "token-value")
-	assert.NotContains(t, capturedArgs, "hunter2")
-	assert.NotContains(t, capturedArgs, "s3cret")
-	assert.Equal(t, "A_PASSWORD=s3cret\nB_PASSWORD=hunter2\n", capturedStdin)
-	assert.NotContains(t, logs.String(), "token-value")
-	assert.NotContains(t, logs.String(), "hunter2")
-	assert.NotContains(t, logs.String(), "s3cret")
+		assert.NoError(t, err)
+		if assert.Len(t, requests, 2) {
+			assert.Equal(t, "POST", requests[0].method)
+			assert.Equal(t, "/apps/score-gateway/secrets/A_PASSWORD/type/string", requests[0].path)
+			assert.Equal(t, "Bearer test-token", requests[0].authorization)
+			assert.Equal(t, secretValueToInts("s3cret"), requests[0].value)
+			assert.Equal(t, "/apps/score-gateway/secrets/B_PASSWORD/type/string", requests[1].path)
+			assert.Equal(t, "Bearer test-token", requests[1].authorization)
+			assert.Equal(t, secretValueToInts("hunter2"), requests[1].value)
+		}
+	})
+
+	t.Run("empty map makes no requests", func(t *testing.T) {
+		var requests []recordedSecretRequest
+		d := newSecretsDeployer(t, &requests, func(w http.ResponseWriter) { w.WriteHeader(http.StatusCreated) })
+
+		err := setMachineSecrets(context.Background(), d, map[string]string{})
+
+		assert.NoError(t, err)
+		assert.Empty(t, requests)
+	})
+
+	t.Run("failure names the secret and not the value", func(t *testing.T) {
+		var requests []recordedSecretRequest
+		d := newSecretsDeployer(t, &requests, func(w http.ResponseWriter) {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte("rejected value hunter2"))
+		})
+
+		err := setMachineSecrets(context.Background(), d, map[string]string{"B_PASSWORD": "hunter2"})
+
+		assert.ErrorContains(t, err, "B_PASSWORD")
+		assert.ErrorContains(t, err, "500")
+		assert.NotContains(t, err.Error(), "hunter2")
+		assert.NotContains(t, err.Error(), "rejected value")
+	})
 }
 
-func TestEnvironmentWithFlyTokenReplacesExistingToken(t *testing.T) {
-	environment := environmentWithFlyToken([]string{"PATH=/bin", "FLY_API_TOKEN=old-token"}, "new-token")
-
-	assert.Equal(t, []string{"PATH=/bin", "FLY_API_TOKEN=new-token"}, environment)
+func secretValueToInts(value string) []int {
+	out := make([]int, len(value))
+	for i := 0; i < len(value); i++ {
+		out[i] = int(value[i])
+	}
+	return out
 }
 
 func TestMachinePlanArtifactRecordsSecretNamesWithoutValues(t *testing.T) {

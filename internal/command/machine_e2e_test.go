@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -22,6 +21,14 @@ const e2eAppName = "e2e-gateway"
 
 const e2eSecretValue = "e2e-secret-runtime-value"
 
+const leakedSecretBodyMarker = "leaked-secret-body-marker"
+
+type fakeSecretCreate struct {
+	Label         string
+	Value         string
+	Authorization string
+}
+
 type fakeMachineCreate struct {
 	ID                  string
 	Group               string
@@ -32,15 +39,17 @@ type fakeMachineCreate struct {
 }
 
 type fakeMachinesAPI struct {
-	server       *httptest.Server
-	mu           sync.Mutex
-	apps         map[string]bool
-	machines     []flymachines.Machine
-	operations   []string
-	creates      []fakeMachineCreate
-	deletes      []string
-	nextID       int
-	failCreateOn int
+	server           *httptest.Server
+	mu               sync.Mutex
+	apps             map[string]bool
+	machines         []flymachines.Machine
+	operations       []string
+	creates          []fakeMachineCreate
+	secretCreates    []fakeSecretCreate
+	deletes          []string
+	nextID           int
+	failCreateOn     int
+	failSecretCreate bool
 }
 
 func newFakeMachinesAPI(t *testing.T, failCreateOn int) *fakeMachinesAPI {
@@ -69,6 +78,23 @@ func newFakeMachinesAPI(t *testing.T, failCreateOn int) *fakeMachinesAPI {
 		case r.Method == http.MethodDelete && len(segments) == 2 && segments[0] == "apps":
 			delete(fake.apps, segments[1])
 			w.WriteHeader(http.StatusAccepted)
+		case r.Method == http.MethodPost && len(segments) == 6 && segments[2] == "secrets" && segments[4] == "type":
+			if fake.failSecretCreate {
+				w.WriteHeader(http.StatusInternalServerError)
+				_ = encoder.Encode(map[string]string{"error": leakedSecretBodyMarker, "value": e2eSecretValue})
+				return
+			}
+			var request struct {
+				Value []int `json:"value"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&request)
+			secretValue := make([]byte, len(request.Value))
+			for i, byteValue := range request.Value {
+				secretValue[i] = byte(byteValue)
+			}
+			fake.secretCreates = append(fake.secretCreates, fakeSecretCreate{Label: segments[3], Value: string(secretValue), Authorization: r.Header.Get("Authorization")})
+			w.WriteHeader(http.StatusCreated)
+			_ = encoder.Encode(struct{}{})
 		case r.Method == http.MethodGet && len(segments) == 3 && segments[2] == "machines":
 			_ = encoder.Encode(fake.machineSnapshotLocked())
 		case r.Method == http.MethodPost && len(segments) == 3 && segments[2] == "machines":
@@ -252,6 +278,18 @@ func (f *fakeMachinesAPI) rollbackDeletes() []string {
 	return append([]string(nil), f.deletes...)
 }
 
+func (f *fakeMachinesAPI) setFailSecretCreate(fail bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failSecretCreate = fail
+}
+
+func (f *fakeMachinesAPI) recordedSecretCreates() []fakeSecretCreate {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]fakeSecretCreate(nil), f.secretCreates...)
+}
+
 func (f *fakeMachinesAPI) seedUnmanagedMachine() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -266,18 +304,6 @@ func newCredentialsProvisionerServer(t *testing.T) *httptest.Server {
 	}))
 	t.Cleanup(server.Close)
 	return server
-}
-
-func stubExecFlyWithInput(t *testing.T) *[]string {
-	t.Helper()
-	stdins := make([]string, 0)
-	original := execFlyWithInput
-	execFlyWithInput = func(_ []string, _, stdin string, _, _ io.Writer) error {
-		stdins = append(stdins, stdin)
-		return nil
-	}
-	t.Cleanup(func() { execFlyWithInput = original })
-	return &stdins
 }
 
 func writeMachineE2EFixture(t *testing.T, workerImage string) string {
@@ -362,17 +388,17 @@ func initE2EProject(t *testing.T, credentials *httptest.Server) {
 	}
 }
 
-func setupMachineE2EEnvironment(t *testing.T, failCreateOn int, workerImage string) (*fakeMachinesAPI, *[]string, string) {
+func setupMachineE2EEnvironment(t *testing.T, failCreateOn int, workerImage string) (*fakeMachinesAPI, string) {
 	t.Helper()
 	_ = changeToTempDir(t)
+	t.Setenv("PATH", t.TempDir())
 	fake := newFakeMachinesAPI(t, failCreateOn)
 	credentials := newCredentialsProvisionerServer(t)
 	t.Setenv("FLY_API_TOKEN", "FlyV1 e2e-token")
 	t.Setenv("FLY_API_BASE_URL", fake.server.URL)
-	stdins := stubExecFlyWithInput(t)
 	workloadFile := writeMachineE2EFixture(t, workerImage)
 	initE2EProject(t, credentials)
-	return fake, stdins, workloadFile
+	return fake, workloadFile
 }
 
 func assertNoFlyTomlFiles(t *testing.T, directory string) {
@@ -386,8 +412,12 @@ func assertNoFlyTomlFiles(t *testing.T, directory string) {
 	}
 }
 
+func (f *fakeMachinesAPI) secretOperationCount() int {
+	return f.countOperation("POST /apps/" + e2eAppName + "/secrets/API_TOKEN/type/string")
+}
+
 func TestMachineCommandsEndToEndAgainstFakeApi(t *testing.T) {
-	fake, stdins, workloadFile := setupMachineE2EEnvironment(t, 0, "registry.example/gateway/worker@sha256:"+strings.Repeat("c", 64))
+	fake, workloadFile := setupMachineE2EEnvironment(t, 0, "registry.example/gateway/worker@sha256:"+strings.Repeat("c", 64))
 
 	t.Run("plan dry run shows machine groups without fly toml", func(t *testing.T) {
 		stdout, stderr, err := executeAndResetCommand(context.Background(), rootCmd, []string{"plan", workloadFile, "--dry-run"})
@@ -402,7 +432,7 @@ func TestMachineCommandsEndToEndAgainstFakeApi(t *testing.T) {
 		assertNoFlyTomlFiles(t, ".")
 	})
 
-	t.Run("apply creates machines for both groups and stages secrets", func(t *testing.T) {
+	t.Run("apply creates machines for both groups and uploads secrets", func(t *testing.T) {
 		stdout, stderr, err := executeAndResetCommand(context.Background(), rootCmd, []string{"apply", workloadFile})
 
 		assert.NoError(t, err)
@@ -423,10 +453,14 @@ func TestMachineCommandsEndToEndAgainstFakeApi(t *testing.T) {
 		}
 		assert.Contains(t, appCreates[0].Checks, "web-ready")
 		assert.Equal(t, 8080, appCreates[0].ServiceInternalPort)
-
-		if assert.Len(t, *stdins, 1) {
-			assert.Contains(t, (*stdins)[0], "API_TOKEN="+e2eSecretValue)
+		assert.Equal(t, 1, fake.secretOperationCount())
+		secretCreates := fake.recordedSecretCreates()
+		if assert.Len(t, secretCreates, 1) {
+			assert.Equal(t, "API_TOKEN", secretCreates[0].Label)
+			assert.Equal(t, e2eSecretValue, secretCreates[0].Value)
+			assert.Equal(t, "Bearer e2e-token", secretCreates[0].Authorization)
 		}
+
 		assert.NotContains(t, stdout, e2eSecretValue)
 		assert.NotContains(t, stderr, e2eSecretValue)
 		assertNoFlyTomlFiles(t, ".")
@@ -434,11 +468,13 @@ func TestMachineCommandsEndToEndAgainstFakeApi(t *testing.T) {
 
 	t.Run("apply again is a noop", func(t *testing.T) {
 		createsBefore := fake.countOperation("POST /apps/" + e2eAppName + "/machines")
+		secretCreatesBefore := fake.secretOperationCount()
 
 		stdout, stderr, err := executeAndResetCommand(context.Background(), rootCmd, []string{"apply", workloadFile})
 
 		assert.NoError(t, err)
 		assert.Equal(t, createsBefore, fake.countOperation("POST /apps/"+e2eAppName+"/machines"))
+		assert.Equal(t, secretCreatesBefore+1, fake.secretOperationCount())
 		assert.Equal(t, 3, fake.machineCount())
 		assert.Contains(t, stdout, "\"action\": \"noop\"")
 		assert.NotContains(t, stdout, "\"action\": \"create\"")
@@ -530,7 +566,7 @@ func TestMachineCommandsEndToEndAgainstFakeApi(t *testing.T) {
 }
 
 func TestApplyFailureRollsBackCreatedMachines(t *testing.T) {
-	fake, _, workloadFile := setupMachineE2EEnvironment(t, 3, "registry.example/gateway/worker@sha256:"+strings.Repeat("c", 64))
+	fake, workloadFile := setupMachineE2EEnvironment(t, 3, "registry.example/gateway/worker@sha256:"+strings.Repeat("c", 64))
 
 	stdout, stderr, err := executeAndResetCommand(context.Background(), rootCmd, []string{"apply", workloadFile})
 
@@ -543,8 +579,26 @@ func TestApplyFailureRollsBackCreatedMachines(t *testing.T) {
 	assert.NotContains(t, stderr, e2eSecretValue)
 }
 
+func TestApplySecretUploadFailureRedactsValue(t *testing.T) {
+	fake, workloadFile := setupMachineE2EEnvironment(t, 0, "registry.example/gateway/worker@sha256:"+strings.Repeat("c", 64))
+	fake.setFailSecretCreate(true)
+
+	stdout, stderr, err := executeAndResetCommand(context.Background(), rootCmd, []string{"apply", workloadFile})
+
+	assert.ErrorContains(t, err, "API_TOKEN")
+	assert.ErrorContains(t, err, "500")
+	for _, leak := range []string{e2eSecretValue, leakedSecretBodyMarker} {
+		assert.NotContains(t, err.Error(), leak)
+		assert.NotContains(t, stdout, leak)
+		assert.NotContains(t, stderr, leak)
+	}
+	assert.Equal(t, 0, fake.machineCount())
+	assert.Equal(t, 0, fake.countOperation("POST /apps/"+e2eAppName+"/machines"))
+	assert.True(t, fake.appExists(e2eAppName))
+}
+
 func TestApplyRejectsMutableImageBeforeAnyApiMutation(t *testing.T) {
-	fake, _, workloadFile := setupMachineE2EEnvironment(t, 0, "registry.example/gateway/worker:latest")
+	fake, workloadFile := setupMachineE2EEnvironment(t, 0, "registry.example/gateway/worker:latest")
 
 	_, _, err := executeAndResetCommand(context.Background(), rootCmd, []string{"apply", workloadFile})
 

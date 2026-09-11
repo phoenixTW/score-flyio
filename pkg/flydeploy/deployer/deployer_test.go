@@ -448,3 +448,116 @@ func TestDeleteMachineMissingIsSafeToRepeat(t *testing.T) {
 	})
 	assert.NoError(t, d.DeleteMachine(context.Background(), "already-gone", false))
 }
+
+type secretCreateRecord struct {
+	Method        string
+	Path          string
+	Authorization string
+	Body          string
+}
+
+func secretValueBytes(value string) []int {
+	out := make([]int, len(value))
+	for i := 0; i < len(value); i++ {
+		out[i] = int(value[i])
+	}
+	return out
+}
+
+func newAuthedTestDeployer(t *testing.T, handler http.HandlerFunc) *Deployer {
+	t.Helper()
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	client, err := flymachines.NewClientWithResponses(server.URL, flymachines.WithRequestEditorFn(func(_ context.Context, req *http.Request) error {
+		req.Header.Set("Authorization", "Bearer test-token")
+		return nil
+	}))
+	assert.NoError(t, err)
+	return New(client, "test-app")
+}
+
+func TestSetSecretsPostsOneCallPerKeyInSortedOrder(t *testing.T) {
+	var records []secretCreateRecord
+	d := newTestDeployer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/apps/test-app/secrets/ALPHA_KEY/type/string", "/apps/test-app/secrets/BETA_KEY/type/string":
+			records = append(records, secretCreateRecord{Method: r.Method, Path: r.URL.Path, Body: readBody(t, r)})
+			writeJSON(t, w, http.StatusCreated, map[string]any{})
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	err := d.SetSecrets(context.Background(), map[string]string{
+		"BETA_KEY":  "sentinel-secret-value-beta",
+		"ALPHA_KEY": "sentinel-secret-value-alpha",
+	})
+
+	assert.NoError(t, err)
+	if assert.Len(t, records, 2) {
+		assert.Equal(t, http.MethodPost, records[0].Method)
+		assert.Equal(t, "/apps/test-app/secrets/ALPHA_KEY/type/string", records[0].Path)
+		assert.Equal(t, "/apps/test-app/secrets/BETA_KEY/type/string", records[1].Path)
+	}
+	var alphaBody flymachines.CreateSecretRequest
+	assert.NoError(t, json.Unmarshal([]byte(records[0].Body), &alphaBody))
+	assert.NotNil(t, alphaBody.Value)
+	assert.Equal(t, secretValueBytes("sentinel-secret-value-alpha"), *alphaBody.Value)
+	var betaBody flymachines.CreateSecretRequest
+	assert.NoError(t, json.Unmarshal([]byte(records[1].Body), &betaBody))
+	assert.NotNil(t, betaBody.Value)
+	assert.Equal(t, secretValueBytes("sentinel-secret-value-beta"), *betaBody.Value)
+}
+
+func TestSetSecretsPropagatesAuthorizationHeader(t *testing.T) {
+	var authorizations []string
+	d := newAuthedTestDeployer(t, func(w http.ResponseWriter, r *http.Request) {
+		authorizations = append(authorizations, r.Header.Get("Authorization"))
+		writeJSON(t, w, http.StatusCreated, map[string]any{})
+	})
+
+	err := d.SetSecrets(context.Background(), map[string]string{
+		"ALPHA_KEY": "sentinel-secret-value",
+		"BETA_KEY":  "sentinel-secret-value",
+	})
+
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"Bearer test-token", "Bearer test-token"}, authorizations)
+}
+
+func TestSetSecretsEmptyMapMakesNoRequests(t *testing.T) {
+	d := newTestDeployer(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusTeapot)
+	})
+
+	assert.NoError(t, d.SetSecrets(context.Background(), map[string]string{}))
+	assert.NoError(t, d.SetSecrets(context.Background(), nil))
+}
+
+func TestSetSecretsFailureRedactsValueAndBody(t *testing.T) {
+	const secretValue = "sentinel-secret-value"
+	d := newTestDeployer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"leaked-body-marker ` + secretValue + `"}`))
+	})
+
+	err := d.SetSecrets(context.Background(), map[string]string{"ALPHA_KEY": secretValue})
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "ALPHA_KEY")
+	assert.Contains(t, err.Error(), "400")
+	assert.NotContains(t, err.Error(), secretValue)
+	assert.NotContains(t, err.Error(), "leaked-body-marker")
+}
+
+func TestSetSecretsFailsOnCanceledContext(t *testing.T) {
+	d := newTestDeployer(t, func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, http.StatusCreated, map[string]any{})
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	assert.Error(t, d.SetSecrets(ctx, map[string]string{"ALPHA_KEY": "sentinel-secret-value"}))
+}

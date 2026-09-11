@@ -4,12 +4,16 @@ package deployer
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/phoenixTW/score-flyio/internal"
 	"github.com/phoenixTW/score-flyio/pkg/flymachines"
 )
+
+const secretTypeString = "string"
 
 const (
 	defaultPollInterval = 500 * time.Millisecond
@@ -192,6 +196,35 @@ func (d *Deployer) EnsureApp(ctx context.Context, request flymachines.CreateAppR
 		return nil, fmt.Errorf("apps ensure: app was not found after create")
 	}
 	return app, nil
+}
+
+// SetSecrets creates or updates each app secret with one Machines API call
+// per key in sorted order, keeping values out of returned errors.
+func (d *Deployer) SetSecrets(ctx context.Context, secrets map[string]string) error {
+	for _, key := range slices.Sorted(maps.Keys(secrets)) {
+		if err := d.createSecret(ctx, key, secrets[key]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *Deployer) createSecret(ctx context.Context, key, secretValue string) error {
+	valueBytes := make([]int, len(secretValue))
+	for i := 0; i < len(secretValue); i++ {
+		valueBytes[i] = int(secretValue[i])
+	}
+	resp, err := d.Api.SecretCreateWithResponse(ctx, d.AppName, key, secretTypeString, flymachines.CreateSecretRequest{Value: &valueBytes})
+	if err != nil {
+		return fmt.Errorf("secrets create %q: %w", key, err)
+	}
+	if resp == nil {
+		return fmt.Errorf("secrets create %q failed: empty response", key)
+	}
+	if resp.StatusCode() != http.StatusCreated {
+		return fmt.Errorf("secrets create %q failed with status %d", key, resp.StatusCode())
+	}
+	return nil
 }
 
 // DeleteApp deletes an app and treats an already missing app as success.

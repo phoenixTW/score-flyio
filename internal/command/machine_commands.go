@@ -58,25 +58,6 @@ var execFly = func(args []string, stdout, stderr io.Writer) error {
 	return flyCommand.Run()
 }
 
-var execFlyWithInput = func(args []string, token, stdin string, stdout, stderr io.Writer) error {
-	flyCommand := exec.Command("fly", args...)
-	flyCommand.Env = environmentWithFlyToken(flyCommand.Environ(), token)
-	flyCommand.Stdin = strings.NewReader(stdin)
-	flyCommand.Stdout, flyCommand.Stderr = stdout, stderr
-	return flyCommand.Run()
-}
-
-func environmentWithFlyToken(environment []string, token string) []string {
-	const tokenKey = "FLY_API_TOKEN="
-	out := make([]string, 0, len(environment)+1)
-	for _, entry := range environment {
-		if !strings.HasPrefix(entry, tokenKey) {
-			out = append(out, entry)
-		}
-	}
-	return append(out, tokenKey+token)
-}
-
 type machineHookSet struct {
 	apply     func(context.Context, *machineconfig.Plan, []planner.MachineChange, map[string]string) error
 	status    func(context.Context, *machineconfig.Plan, io.Writer) error
@@ -226,7 +207,7 @@ func applyMachinePlanLive(cmd *cobra.Command, input *machineInput) error {
 	if _, err := d.EnsureApp(cmd.Context(), flymachines.CreateAppRequest{AppName: &input.plan.AppName}); err != nil {
 		return err
 	}
-	if err := setMachineSecrets(cmd, client.ApiToken, input.plan.AppName, input.secrets); err != nil {
+	if err := setMachineSecrets(cmd.Context(), d, input.secrets); err != nil {
 		return err
 	}
 	skip, releaseHash := releaseOptions(input)
@@ -706,20 +687,8 @@ func runMachineDestroy(cmd *cobra.Command, args []string) error {
 	return writeMachineJSON(cmd, map[string]any{"app_name": input.plan.AppName, "deleted": deleted, "app_deleted": appDeleted})
 }
 
-func setMachineSecrets(cmd *cobra.Command, token, app string, secrets map[string]string) error {
-	if len(secrets) == 0 {
-		return nil
-	}
-	keys := slices.Sorted(maps.Keys(secrets))
-	lines := make([]string, 0, len(keys))
-	for _, key := range keys {
-		lines = append(lines, fmt.Sprintf("%s=%s", key, secrets[key]))
-	}
-	args := []string{"secrets", "import", "--app", app, "--stage"}
-	if err := execFlyWithInput(args, token, strings.Join(lines, "\n")+"\n", cmd.ErrOrStderr(), cmd.ErrOrStderr()); err != nil {
-		return fmt.Errorf("failed to set machine secrets: %w", err)
-	}
-	return nil
+func setMachineSecrets(ctx context.Context, d *deployer.Deployer, secrets map[string]string) error {
+	return d.SetSecrets(ctx, secrets)
 }
 
 func runMachineReconcile(cmd *cobra.Command, args []string) error {

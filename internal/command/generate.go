@@ -169,7 +169,7 @@ var generateCmd = &cobra.Command{
 			if _, err := machineDeployer.EnsureApp(cmd.Context(), flymachines.CreateAppRequest{AppName: &flyAppName}); err != nil {
 				return fmt.Errorf("failed to ensure app: %w", err)
 			}
-			if err := setMachineSecrets(cmd, client.ApiToken, flyAppName, machineSecrets); err != nil {
+			if err := setMachineSecrets(cmd.Context(), machineDeployer, machineSecrets); err != nil {
 				return err
 			}
 			machineInput := &machineInput{state: currentState, plan: machinePlan, secrets: machineSecrets}
@@ -229,7 +229,7 @@ var generateCmd = &cobra.Command{
 				}
 				if len(secrets) > 0 {
 					slog.Info("Setting secrets on app", slog.String("app", flyAppName), slog.Int("#secrets", len(secrets)))
-					if err := setMachineSecrets(cmd, client.ApiToken, flyAppName, secrets); err != nil {
+					if err := setMachineSecrets(cmd.Context(), deployer.New(client, flyAppName), secrets); err != nil {
 						return err
 					}
 				}
