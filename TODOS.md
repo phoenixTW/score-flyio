@@ -21,14 +21,14 @@ budgets, and environment policy are supplied by the caller.
 
 ## Next
 
-- [ ] Make the renderer-owned metadata extension fully documented and stable.
+- [x] Make the renderer-owned metadata extension fully documented and stable.
 - [ ] Add architecture selection and resource-policy validation.
 - [ ] Add adoption/import and a compatibility report for existing machines.
 - [ ] Add remote-state/CI artifact guidance and deployment correlation IDs.
-- [ ] Add golden plans for generic service, worker, and sidecar workloads.
-- [ ] Add idempotency, orphan cleanup, secret-redaction, and scale-to-zero
+- [x] Add golden plans for generic service, worker, and sidecar workloads.
+- [x] Add idempotency, orphan cleanup, secret-redaction, and scale-to-zero
       integration fixtures.
-- [ ] Add a local fake Machines API end-to-end profile with zero cloud spend.
+- [x] Add a local fake Machines API end-to-end profile with zero cloud spend.
 - [ ] Add release packaging checks and pin the renderer in caller CI.
 - [ ] Add runbooks for deploy, rollback, suspend, resume, rotation, and logs.
 
