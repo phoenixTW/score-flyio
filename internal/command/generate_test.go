@@ -24,6 +24,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func changeToDir(t *testing.T, dir string) string {
@@ -114,9 +115,28 @@ func TestSampleTests(t *testing.T) {
 		if e.IsDir() {
 			t.Run(e.Name(), func(t *testing.T) {
 				td := changeToTempDir(t)
+				sampleFile := filepath.Join(ioTestsDir, e.Name(), "score.yaml")
+				raw, readErr := os.ReadFile(sampleFile)
+				require.NoError(t, readErr)
+				var workload struct {
+					Metadata map[string]any `yaml:"metadata"`
+				}
+				require.NoError(t, yaml.Unmarshal(raw, &workload))
 				_, _, err := executeAndResetCommand(context.Background(), rootCmd, []string{"init", "--fly-app-prefix=iotest-", "--file="})
 				require.NoError(t, err)
-				_, _, err = executeAndResetCommand(context.Background(), rootCmd, []string{"generate", filepath.Join(ioTestsDir, e.Name(), "score.yaml")})
+
+				if _, machinePath := workload.Metadata["fly"]; machinePath {
+					stdout, _, planErr := executeAndResetCommand(context.Background(), rootCmd, []string{"plan", sampleFile, "--dry-run"})
+					assert.NoError(t, planErr)
+					assert.Contains(t, stdout, "\"machine_groups\"")
+					outputs, _ := os.ReadDir(td)
+					for _, output := range outputs {
+						assert.False(t, strings.HasPrefix(output.Name(), "fly_"))
+					}
+					return
+				}
+
+				_, _, err = executeAndResetCommand(context.Background(), rootCmd, []string{"generate", sampleFile})
 				require.NoError(t, err)
 				expectedEntries, _ := os.ReadDir(filepath.Join(ioTestsDir, e.Name()))
 				for _, ee := range expectedEntries {

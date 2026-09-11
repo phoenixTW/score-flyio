@@ -52,7 +52,7 @@ const (
 
 var generateCmd = &cobra.Command{
 	Use:   "generate",
-	Short: "Run the conversion from score file to output manifests",
+	Short: "Convert a Score workload to Fly output: Machines plans for metadata.fly workloads, fly.toml otherwise",
 	Args:  cobra.ExactArgs(1),
 	CompletionOptions: cobra.CompletionOptions{
 		HiddenDefaultCmd: true,

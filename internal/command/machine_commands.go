@@ -885,24 +885,24 @@ func value(v *string) string {
 	return *v
 }
 
-func newMachineCommand(use string, run func(*cobra.Command, []string) error, includeYes bool) *cobra.Command {
-	cmd := &cobra.Command{Use: use, Args: cobra.ExactArgs(1), SilenceUsage: true, RunE: run}
+func newMachineCommand(use string, short string, run func(*cobra.Command, []string) error, includeYes bool) *cobra.Command {
+	cmd := &cobra.Command{Use: use, Short: short, Args: cobra.ExactArgs(1), SilenceUsage: true, RunE: run}
 	setupMachineFlags(cmd, includeYes)
 	return cmd
 }
 
 func init() {
-	validate := newMachineCommand("validate SCORE_FILE", runMachineValidate, false)
-	plan := newMachineCommand("plan SCORE_FILE", runMachinePlan, false)
-	apply := newMachineCommand("apply SCORE_FILE", runMachineApply, false)
+	validate := newMachineCommand("validate SCORE_FILE", "Validate a Score workload and its Machines plan offline", runMachineValidate, false)
+	plan := newMachineCommand("plan SCORE_FILE", "Show the Machines plan and pending changes for a workload", runMachinePlan, false)
+	apply := newMachineCommand("apply SCORE_FILE", "Deploy a workload plan via the Fly Machines API", runMachineApply, false)
 	apply.Flags().String("secrets-file", "", "read exact-plan runtime secrets from a permission-restricted KEY=VALUE file")
-	status := newMachineCommand("status SCORE_FILE", runMachineStatus, false)
-	reconcileCmd := newMachineCommand("reconcile SCORE_FILE", runMachineReconcile, false)
-	destroy := newMachineCommand("destroy SCORE_FILE", runMachineDestroy, true)
-	logs := newMachineCommand("logs SCORE_FILE", runMachineLogs, false)
+	status := newMachineCommand("status SCORE_FILE", "Report live machines, events, checks, and exits", runMachineStatus, false)
+	reconcileCmd := newMachineCommand("reconcile SCORE_FILE", "Re-apply the desired Machines state", runMachineReconcile, false)
+	destroy := newMachineCommand("destroy SCORE_FILE", "Delete managed machines and the Fly app", runMachineDestroy, true)
+	logs := newMachineCommand("logs SCORE_FILE", "Stream logs for managed machines", runMachineLogs, false)
 	logs.Flags().String("machine", "", "target a single machine by id")
 	logs.Flags().String("group", "", "target machines in one machine group")
-	scale := newMachineCommand("scale SCORE_FILE", runMachineScale, false)
+	scale := newMachineCommand("scale SCORE_FILE", "Set machine group scale bounds", runMachineScale, false)
 	scale.Flags().String("group", "", "machine group to scale")
 	scale.Flags().Int("min", 0, "minimum machine count")
 	scale.Flags().Int("max", 0, "maximum machine count")
@@ -910,9 +910,9 @@ func init() {
 	_ = scale.MarkFlagRequired("group")
 	_ = scale.MarkFlagRequired("min")
 	_ = scale.MarkFlagRequired("max")
-	suspend := newMachineCommand("suspend SCORE_FILE", runMachineSuspend, false)
+	suspend := newMachineCommand("suspend SCORE_FILE", "Suspend managed machines (scale to zero)", runMachineSuspend, false)
 	suspend.Flags().String("group", "", "target machines in one machine group")
-	resume := newMachineCommand("resume SCORE_FILE", runMachineResume, false)
+	resume := newMachineCommand("resume SCORE_FILE", "Resume suspended managed machines", runMachineResume, false)
 	resume.Flags().String("group", "", "target machines in one machine group")
 	rootCmd.AddCommand(validate, plan, apply, status, reconcileCmd, destroy, logs, scale, suspend, resume)
 }
