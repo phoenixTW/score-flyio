@@ -17,7 +17,8 @@ produces this extension. Workloads without it use the legacy single-container
 go install github.com/phoenixTW/score-flyio@v0.1.2
 # or download a binary from https://github.com/phoenixTW/score-flyio/releases
 
-export FLY_API_TOKEN=$(fly tokens create org -x '24h' -o personal)
+# create a token from the Fly dashboard or API — no CLI required
+export FLY_API_TOKEN=<fly-api-token>
 
 score-flyio init --fly-app-prefix my-app-
 score-flyio generate score.yaml --deploy
@@ -25,11 +26,16 @@ score-flyio generate score.yaml --deploy
 
 Pin a released semver tag — not a branch or `@latest` — so caller pipelines
 stay reproducible. `FLY_API_BASE_URL` (v0.2.0+) optionally overrides the
-Machines API endpoint for local fake-API testing.
+Machines API endpoint for the whole machine deploy path — machine
+reconciliation and secret creation — for local fake-API testing.
 
-Legacy single-container flow: `generate` writes `<workload>.toml` + `.env`, sets secrets, and deploys. Machine flow (multi-container /
-`metadata.fly`): `generate --deploy` drives the Fly Machines API directly — it
-never falls back to an invalid TOML plan.
+Legacy single-container flow: `generate` writes `<workload>.toml` + `.env`,
+uploads secrets via the Machines API, and creates/deploys the app with the
+`fly` CLI. Machine flow (multi-container /
+`metadata.fly`): deploys — including runtime secret upload — use only the
+Fly Machines API; `generate --deploy` drives it directly and never falls back
+to an invalid TOML plan. Caller pipelines do not need `flyctl`/`fly` on the
+deploy path.
 
 ### Machine deployment commands
 
@@ -44,6 +50,11 @@ never falls back to an invalid TOML plan.
 | `score-flyio suspend/resume score.yaml` | scale to zero and back |
 | `score-flyio reconcile score.yaml` | re-apply desired state |
 | `score-flyio destroy score.yaml --yes` | delete managed machines and app |
+
+`logs` is the only command on the machine path that still uses the `fly` CLI
+(streaming compatibility); every other machine-path command is API-only. The
+legacy single-container flow still uses the `fly` CLI for app creation and
+deploys.
 
 Apply is idempotent (config-hash no-op re-runs), runs one-off release commands exactly once per change, waits for health checks, and rolls back partial failures.
 
@@ -80,7 +91,7 @@ Score adapter and CLI.
 
 ## Resources and state
 
-Provisioners (`score-flyio provisioners add ...`) support `static` JSON, `cmd` binaries, and `http` endpoints; a built-in Fly Postgres provisioner is included. Resource state and provisioner config persist to `.score-flyio/state.yaml` — treat it like Terraform state: keep it per environment, backed up, and access-controlled. See the [Score docs](https://docs.score.dev/docs/) for resource semantics.
+Provisioners (`score-flyio provisioners add ...`) support `static` JSON, `cmd` binaries, and `http` endpoints; a built-in Fly Postgres provisioner is included. Command and HTTP provisioners classify their outputs into `values` and `secrets`; secret-backed `${resources.*}` references resolve to runtime secrets that are uploaded to the Machines API per key and never appear in plans, artifacts, logs, or errors. Vendor-specific provisioners belong in separate companion projects outside this renderer. Resource state and provisioner config persist to `.score-flyio/state.yaml` — treat it like Terraform state: keep it per environment, backed up, and access-controlled. See the [Score docs](https://docs.score.dev/docs/) for resource semantics.
 
 Sample Score specs live in [./samples](./samples), including a
 [multi-container workload](./samples/multi_containers/score.yaml) with a

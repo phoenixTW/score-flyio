@@ -13,6 +13,25 @@ Multi-container support (the Fly Machines API path) shipped in `v0.1.2`.
 Releases are cut automatically from `main` once CI passes; every release
 publishes cross-platform binaries and checksums.
 
+## v0.3.0: fully API-only machine deploys
+
+Machine deployments for `metadata.fly` workloads no longer invoke the `fly`
+CLI. Runtime secret upload switched from `fly secrets import --stage` to
+Machines API requests — one request per secret key, in sorted key order —
+after app creation and before machine reconciliation.
+
+Migrating from `v0.2.0`:
+
+- Remove `flyctl`/`fly` from deploy pipelines: `apply`, `reconcile`, and
+  `generate --deploy` need only `FLY_API_TOKEN` (and optionally
+  `FLY_API_BASE_URL`).
+- Point `FLY_API_BASE_URL` at a fake Machines API server for CI runs; it now
+  covers the whole deploy path, including secret creation.
+- The exact-plan flow is unchanged: `--plan-file` plus a `0600`
+  `--secrets-file` still applies the plan produced by `plan`.
+- The legacy single-container TOML path keeps its CLI-based app creation and
+  deploy; only its secret upload moved to the Machines API.
+
 ## Single-container workloads: no change needed
 
 The legacy flow keeps working: `generate` writes `fly_<workload>.toml`,
@@ -65,12 +84,14 @@ path. No hand-authored or generated `fly.toml` is involved.
 
 ## Offline and CI verification
 
-Tests and CI pipelines can exercise the full CLI against a local fake Machines
-API with zero cloud spend by pointing the client at any HTTP base URL:
+Tests and CI pipelines can exercise the full machine deploy path, including
+secret creation, against a local fake Machines API with zero cloud spend by
+pointing the client at any HTTP base URL:
 
 ```sh
 export FLY_API_TOKEN=test-token
 export FLY_API_BASE_URL=http://localhost:9999/v1
 ```
 
-`FLY_API_BASE_URL` (v0.2.0+) is optional; unset it for the public Fly API.
+`FLY_API_BASE_URL` (v0.2.0+) is optional and covers the whole Machines deploy
+path; unset it for the public Fly API.

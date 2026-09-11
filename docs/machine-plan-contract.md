@@ -34,6 +34,9 @@ file must be readable only by its owner and contain exactly the required
 `KEY=VALUE` entries. Older artifacts without a versioned required-secret list
 must be regenerated before apply.
 
+Apply is ordered: the renderer ensures the app, uploads each required runtime
+secret to the Machines API, then reconciles machines.
+
 ## Compatibility
 
 `init`, `generate`, `generate --deploy`, provisioners, overrides, and secret
