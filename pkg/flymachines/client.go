@@ -6,6 +6,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
@@ -19,13 +20,35 @@ type FlyClient struct {
 	ApiToken string
 }
 
+const defaultApiBaseUrl = "https://api.machines.dev/v1"
+
+func apiBaseUrlFromEnv() (string, error) {
+	baseURL := os.Getenv("FLY_API_BASE_URL")
+	if baseURL == "" {
+		return defaultApiBaseUrl, nil
+	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid FLY_API_BASE_URL %q: %w", baseURL, err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("invalid FLY_API_BASE_URL %q: scheme must be http or https", baseURL)
+	}
+	return baseURL, nil
+}
+
 func NewFlyClient() (*FlyClient, error) {
 	token, ok := os.LookupEnv("FLY_API_TOKEN")
 	if !ok || token == "" {
 		return nil, fmt.Errorf("FLY_API_TOKEN must be set")
 	}
 	token = strings.TrimPrefix(token, "FlyV1 ")
-	c, err := NewClientWithResponses("https://api.machines.dev/v1", WithRequestEditorFn(func(ctx context.Context, req *http.Request) error {
+	baseURL, err := apiBaseUrlFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	c, err := NewClientWithResponses(baseURL, WithRequestEditorFn(func(ctx context.Context, req *http.Request) error {
 		req.Header.Set("Authorization", "Bearer "+token)
 		slog.Debug("Making API request %s %s", req.Method, req.URL)
 		return nil
