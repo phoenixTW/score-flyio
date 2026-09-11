@@ -1,0 +1,68 @@
+{
+  "app_name": "example-gateway",
+  "renderer_version": "0.1.0",
+  "workload": "gateway",
+  "environment": "staging",
+  "groups": [
+    {
+      "name": "frontend",
+      "region": "ams",
+      "guest": {
+        "cpu_kind": "shared",
+        "cpus": 1,
+        "memory_mb": 512
+      },
+      "min_machines": 1,
+      "max_machines": 3,
+      "restart": "always",
+      "services": [
+        {
+          "protocol": "tcp",
+          "internal_port": 8080,
+          "ports": [
+            {
+              "port": 443,
+              "handlers": [
+                "http"
+              ]
+            }
+          ]
+        }
+      ],
+      "checks": {
+        "web-ready": {
+          "type": "http",
+          "port": 8080,
+          "method": "get",
+          "path": "/ready",
+          "interval_seconds": 10,
+          "timeout_seconds": 5
+        }
+      },
+      "metadata": {
+        "fly.environment": "staging",
+        "fly.renderer-version": "0.1.0",
+        "fly.workload": "gateway",
+        "flydeploy.group": "frontend"
+      },
+      "containers": [
+        {
+          "name": "sidecar",
+          "image": "registry.example/gateway/sidecar@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "image_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "args": [
+            "tunnel",
+            "run"
+          ],
+          "restart": "always"
+        },
+        {
+          "name": "web",
+          "image": "registry.example/gateway/web@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "restart": "always"
+        }
+      ]
+    }
+  ]
+}
