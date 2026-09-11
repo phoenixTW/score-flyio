@@ -23,8 +23,8 @@ patch="${rest#*.}"
 subjects="$(git log --format='%s' "$range")"
 bodies="$(git log --format='%b' "$range")"
 
-if echo "$subjects" | grep -qE '^[a-zA-Z]+(\([^)]*\))?!:' \
-  || echo "$bodies" | grep -qE 'BREAKING CHANGE'; then
+if echo "$subjects" | grep -qE '^[a-zA-Z]+(\([^)]*\))?!:' ||
+  echo "$bodies" | grep -qE 'BREAKING CHANGE'; then
   major=$((major + 1))
   minor=0
   patch=0
