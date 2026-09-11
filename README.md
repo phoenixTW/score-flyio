@@ -8,12 +8,13 @@ Score workloads may carry the renderer-owned `metadata.fly` extension for
 multi-container machine groups (colocation, independent scaling, and release
 commands). Application-specific configuration belongs in the caller that
 produces this extension. Workloads without it use the legacy single-container
-`fly.toml` path.
+`fly.toml` path. See the [`metadata.fly` reference](docs/metadata-fly.md) and
+[migration notes](docs/migration.md).
 
 ## Quickstart
 
 ```sh
-go install github.com/phoenixTW/score-flyio@latest
+go install github.com/phoenixTW/score-flyio@v0.1.2
 # or download a binary from https://github.com/phoenixTW/score-flyio/releases
 
 export FLY_API_TOKEN=$(fly tokens create org -x '24h' -o personal)
@@ -21,6 +22,10 @@ export FLY_API_TOKEN=$(fly tokens create org -x '24h' -o personal)
 score-flyio init --fly-app-prefix my-app-
 score-flyio generate score.yaml --deploy
 ```
+
+Pin a released semver tag — not a branch or `@latest` — so caller pipelines
+stay reproducible. `FLY_API_BASE_URL` optionally overrides the Machines API
+endpoint for local fake-API testing.
 
 Legacy single-container flow: `generate` writes `<workload>.toml` + `.env`, sets secrets, and deploys. Machine flow (multi-container /
 `metadata.fly`): `generate --deploy` drives the Fly Machines API directly — it
@@ -77,7 +82,9 @@ Score adapter and CLI.
 
 Provisioners (`score-flyio provisioners add ...`) support `static` JSON, `cmd` binaries, and `http` endpoints; a built-in Fly Postgres provisioner is included. Resource state and provisioner config persist to `.score-flyio/state.yaml` — treat it like Terraform state: keep it per environment, backed up, and access-controlled. See the [Score docs](https://docs.score.dev/docs/) for resource semantics.
 
-Sample Score specs live in [./samples](./samples).
+Sample Score specs live in [./samples](./samples), including a
+[multi-container workload](./samples/multi_containers/score.yaml) with a
+service, a colocated sidecar, and an independently scaled worker.
 
 ## Releases
 
