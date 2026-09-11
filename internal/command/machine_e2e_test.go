@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/phoenixTW/score-flyio/internal"
 	"github.com/phoenixTW/score-flyio/pkg/flymachines"
 )
 
@@ -58,13 +59,13 @@ func newFakeMachinesAPI(t *testing.T, failCreateOn int) *fakeMachinesAPI {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
-			_ = encoder.Encode(flymachines.App{Id: strPtr("app-" + segments[1]), Name: strPtr(segments[1]), Status: strPtr("deployed")})
+			_ = encoder.Encode(flymachines.App{Id: internal.Ref("app-" + segments[1]), Name: internal.Ref(segments[1]), Status: internal.Ref("deployed")})
 		case r.Method == http.MethodPost && len(segments) == 1 && segments[0] == "apps":
 			var request flymachines.CreateAppRequest
 			_ = json.NewDecoder(r.Body).Decode(&request)
 			fake.apps[*request.AppName] = true
 			w.WriteHeader(http.StatusCreated)
-			_ = encoder.Encode(flymachines.App{Id: strPtr("app-" + *request.AppName), Name: request.AppName, Status: strPtr("deployed")})
+			_ = encoder.Encode(flymachines.App{Id: internal.Ref("app-" + *request.AppName), Name: request.AppName, Status: internal.Ref("deployed")})
 		case r.Method == http.MethodDelete && len(segments) == 2 && segments[0] == "apps":
 			delete(fake.apps, segments[1])
 			w.WriteHeader(http.StatusAccepted)
@@ -84,7 +85,7 @@ func newFakeMachinesAPI(t *testing.T, failCreateOn int) *fakeMachinesAPI {
 			_ = json.NewDecoder(r.Body).Decode(&request)
 			id := fmt.Sprintf("m%d", fake.nextID)
 			fake.nextID++
-			machine := flymachines.Machine{Id: strPtr(id), Name: request.Name, Region: request.Region, State: strPtr("started"), InstanceId: strPtr(fmt.Sprintf("v%d", fake.nextID)), Config: request.Config}
+			machine := flymachines.Machine{Id: internal.Ref(id), Name: request.Name, Region: request.Region, State: internal.Ref("started"), InstanceId: internal.Ref(fmt.Sprintf("v%d", fake.nextID)), Config: request.Config}
 			fake.machines = append(fake.machines, machine)
 			fake.creates = append(fake.creates, recordMachineCreate(id, request.Config))
 			_ = encoder.Encode(machine)
@@ -170,7 +171,7 @@ func (f *fakeMachinesAPI) findMachineLocked(id string) (flymachines.Machine, boo
 func (f *fakeMachinesAPI) setMachineStateLocked(id string, state string) {
 	for i := range f.machines {
 		if f.machines[i].Id != nil && *f.machines[i].Id == id {
-			f.machines[i].State = strPtr(state)
+			f.machines[i].State = internal.Ref(state)
 		}
 	}
 }
@@ -221,7 +222,7 @@ func (f *fakeMachinesAPI) machineStates() map[string]string {
 	out := make(map[string]string, len(f.machines))
 	for _, machine := range f.machines {
 		if machine.Id != nil {
-			out[*machine.Id] = strOrEmpty(machine.State)
+			out[*machine.Id] = value(machine.State)
 		}
 	}
 	return out
@@ -254,18 +255,7 @@ func (f *fakeMachinesAPI) rollbackDeletes() []string {
 func (f *fakeMachinesAPI) seedUnmanagedMachine() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.machines = append(f.machines, flymachines.Machine{Id: strPtr("external-1"), Name: strPtr("external"), Region: strPtr("iad"), State: strPtr("started")})
-}
-
-func strPtr(value string) *string {
-	return &value
-}
-
-func strOrEmpty(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return *value
+	f.machines = append(f.machines, flymachines.Machine{Id: internal.Ref("external-1"), Name: internal.Ref("external"), Region: internal.Ref("iad"), State: internal.Ref("started")})
 }
 
 func newCredentialsProvisionerServer(t *testing.T) *httptest.Server {

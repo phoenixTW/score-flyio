@@ -54,6 +54,8 @@ path. No hand-authored or generated `fly.toml` is involved.
 
 - Apply is idempotent: re-running an unchanged plan is a no-op (per-group
   config hash), and failed health checks stop the rollout and roll back.
+  On rollback, machines created during the failed apply are deleted; the Fly
+  app itself is retained (empty and safe to re-apply or `destroy`).
 - One-off release commands (`metadata.fly.release_command`) run exactly once
   per plan change, tracked in local state.
 - Runtime secrets never appear in plans, logs, or errors; exact-plan applies
@@ -71,4 +73,4 @@ export FLY_API_TOKEN=test-token
 export FLY_API_BASE_URL=http://localhost:9999/v1
 ```
 
-`FLY_API_BASE_URL` is optional; unset it for the public Fly API.
+`FLY_API_BASE_URL` (v0.2.0+) is optional; unset it for the public Fly API.

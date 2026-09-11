@@ -24,8 +24,8 @@ score-flyio generate score.yaml --deploy
 ```
 
 Pin a released semver tag — not a branch or `@latest` — so caller pipelines
-stay reproducible. `FLY_API_BASE_URL` optionally overrides the Machines API
-endpoint for local fake-API testing.
+stay reproducible. `FLY_API_BASE_URL` (v0.2.0+) optionally overrides the
+Machines API endpoint for local fake-API testing.
 
 Legacy single-container flow: `generate` writes `<workload>.toml` + `.env`, sets secrets, and deploys. Machine flow (multi-container /
 `metadata.fly`): `generate --deploy` drives the Fly Machines API directly — it
