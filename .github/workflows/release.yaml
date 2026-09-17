@@ -43,7 +43,7 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - name: set up Go
         if: steps.tag.outputs.skip != 'true'
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: checkout tag
