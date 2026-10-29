@@ -5,7 +5,7 @@ go 1.27
 require (
 	dario.cat/mergo v1.0.2
 	github.com/BurntSushi/toml v1.6.0
-	github.com/oapi-codegen/runtime v1.7.0
+	github.com/oapi-codegen/runtime v1.8.0
 	github.com/score-spec/score-go v1.20.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
